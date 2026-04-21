@@ -1,0 +1,987 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<title>rPPG HR + HRV Monitor</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --panel: #1a1d26;
+    --border: #2a2f3d;
+    --text: #e8eaef;
+    --muted: #8892a6;
+    --good: #4ade80;
+    --mid: #fbbf24;
+    --bad: #ef4444;
+    --accent: #60a5fa;
+    --accent2: #f97316;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-size: 14px;
+    overflow-x: hidden;
+    min-height: 100vh;
+  }
+  .app {
+    max-width: 640px;
+    margin: 0 auto;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  h1 {
+    font-size: 18px;
+    font-weight: 600;
+    text-align: center;
+  }
+  .disclaimer {
+    font-size: 11px;
+    color: var(--muted);
+    text-align: center;
+    padding: 0 16px;
+  }
+  .video-wrap {
+    position: relative;
+    background: #000;
+    border-radius: 12px;
+    overflow: hidden;
+    aspect-ratio: 4 / 3;
+  }
+  video, canvas.overlay {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+  canvas.overlay {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+  }
+  .video-status {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    background: rgba(0,0,0,0.55);
+    padding: 4px 8px;
+    border-radius: 6px;
+    font-size: 11px;
+    color: var(--muted);
+  }
+  .controls {
+    display: flex;
+    gap: 8px;
+  }
+  button {
+    flex: 1;
+    padding: 12px;
+    background: var(--accent);
+    color: #000;
+    border: none;
+    border-radius: 8px;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  button.secondary {
+    background: var(--panel);
+    color: var(--text);
+    border: 1px solid var(--border);
+  }
+  button:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+  .metrics {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .metric {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+  }
+  .metric .label {
+    font-size: 11px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .metric .value {
+    font-size: 24px;
+    font-weight: 700;
+    margin-top: 2px;
+    font-variant-numeric: tabular-nums;
+  }
+  .metric .sub {
+    font-size: 11px;
+    color: var(--muted);
+    margin-top: 2px;
+  }
+  .metric.wide { grid-column: 1 / -1; }
+
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px;
+  }
+  .panel h3 {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 6px;
+  }
+  canvas.chart {
+    width: 100%;
+    height: 120px;
+    display: block;
+  }
+  .quality-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 12px;
+    padding: 2px 0;
+  }
+  .quality-row .name {
+    color: var(--muted);
+  }
+  .quality-row .val {
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+  }
+  .quality-row.best .name,
+  .quality-row.best .val { color: var(--good); }
+  .log {
+    font-size: 11px;
+    color: var(--muted);
+    max-height: 80px;
+    overflow-y: auto;
+    font-family: ui-monospace, monospace;
+    line-height: 1.4;
+  }
+  .warn { color: var(--mid); }
+  .err { color: var(--bad); }
+  .ok { color: var(--good); }
+</style>
+</head>
+<body>
+<div class="app">
+  <h1>rPPG Heart Rate + HRV</h1>
+  <div class="disclaimer">
+    Not a medical device. For testing only. Sit still, face the camera, good lighting.
+  </div>
+
+  <div class="video-wrap">
+    <video id="video" playsinline muted autoplay></video>
+    <canvas id="overlay" class="overlay"></canvas>
+    <div class="video-status" id="status">Not started</div>
+  </div>
+
+  <div class="controls">
+    <button id="startBtn">Start</button>
+    <button id="stopBtn" class="secondary" disabled>Stop</button>
+  </div>
+
+  <div class="metrics">
+    <div class="metric">
+      <div class="label">HR (IBI)</div>
+      <div class="value" id="hrIbi">--</div>
+      <div class="sub" id="hrIbiSub">bpm</div>
+    </div>
+    <div class="metric">
+      <div class="label">HR (FFT)</div>
+      <div class="value" id="hrFft">--</div>
+      <div class="sub" id="hrFftSub">bpm</div>
+    </div>
+    <div class="metric">
+      <div class="label">RMSSD</div>
+      <div class="value" id="rmssd">--</div>
+      <div class="sub">ms</div>
+    </div>
+    <div class="metric">
+      <div class="label">SDNN</div>
+      <div class="value" id="sdnn">--</div>
+      <div class="sub">ms</div>
+    </div>
+    <div class="metric wide">
+      <div class="label">Agreement</div>
+      <div class="value" id="agreement">--</div>
+      <div class="sub" id="agreementSub">trust indicator</div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h3>Pulse waveform (live, ~8s)</h3>
+    <canvas id="waveChart" class="chart"></canvas>
+  </div>
+
+  <div class="panel">
+    <h3>Signal quality (SNR per ROI)</h3>
+    <div id="qualityList"></div>
+  </div>
+
+  <div class="panel">
+    <h3>Log</h3>
+    <div class="log" id="log"></div>
+  </div>
+</div>
+
+<!-- MediaPipe FaceMesh for face landmarks -->
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4.1633559619/face_mesh.min.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3.1675466862/camera_utils.min.js" crossorigin="anonymous"></script>
+
+<script>
+// ========================= PARAMETERS =========================
+const HR_LOW_HZ   = 0.67;     // 40 bpm
+const HR_HIGH_HZ  = 3.0;      // 180 bpm
+const BUFFER_SEC  = 30;
+const WINDOW_SEC  = 10;       // analysis window
+const PEAK_MIN_PROMINENCE = 0.25;
+const PEAK_MIN_DIST_SEC   = 0.33;    // max 180 bpm
+const BEAT_DEDUP_SEC      = 0.25;
+const BEAT_STABLE_DELAY   = 0.6;
+const MIN_ROI_QUALITY     = 0.05;
+const MIN_ANALYSIS_SEC    = 6;
+
+// FaceMesh landmark groups for skin ROIs
+const LANDMARKS = {
+  forehead:   [10, 67, 69, 104, 108, 151, 337, 338, 299, 297],
+  left_cheek: [205, 187, 123, 117, 118, 101, 36, 142],
+  right_cheek:[425, 411, 352, 346, 347, 330, 266, 371],
+};
+
+// ========================= UI ELEMENTS =========================
+const videoEl   = document.getElementById('video');
+const overlayEl = document.getElementById('overlay');
+const statusEl  = document.getElementById('status');
+const startBtn  = document.getElementById('startBtn');
+const stopBtn   = document.getElementById('stopBtn');
+const hrIbiEl   = document.getElementById('hrIbi');
+const hrFftEl   = document.getElementById('hrFft');
+const hrIbiSub  = document.getElementById('hrIbiSub');
+const hrFftSub  = document.getElementById('hrFftSub');
+const rmssdEl   = document.getElementById('rmssd');
+const sdnnEl    = document.getElementById('sdnn');
+const agreeEl   = document.getElementById('agreement');
+const agreeSub  = document.getElementById('agreementSub');
+const waveCanvas= document.getElementById('waveChart');
+const waveCtx   = waveCanvas.getContext('2d');
+const qualList  = document.getElementById('qualityList');
+const logEl     = document.getElementById('log');
+
+function log(msg, cls='') {
+  const line = document.createElement('div');
+  if (cls) line.className = cls;
+  line.textContent = new Date().toLocaleTimeString() + '  ' + msg;
+  logEl.prepend(line);
+  while (logEl.children.length > 50) logEl.removeChild(logEl.lastChild);
+}
+
+// ========================= SIGNAL PROCESSING =========================
+
+// Butterworth 2nd-order bandpass via RBJ biquad cascade (lo-pass + hi-pass)
+// Coefficients computed per sample rate. Uses filtfilt via forward+reverse pass.
+function designBandpass(fs, low, high) {
+  // Simple approach: 2nd-order bandpass using RBJ formula
+  // H(s) = (omega0 * s) / (s^2 + (omega0/Q) * s + omega0^2)
+  const fc = Math.sqrt(low * high);
+  const bw = high - low;
+  const Q = fc / bw;
+  const omega = 2 * Math.PI * fc / fs;
+  const alpha = Math.sin(omega) / (2 * Q);
+  const cosw = Math.cos(omega);
+  const b0 = alpha;
+  const b1 = 0;
+  const b2 = -alpha;
+  const a0 = 1 + alpha;
+  const a1 = -2 * cosw;
+  const a2 = 1 - alpha;
+  return {
+    b: [b0/a0, b1/a0, b2/a0],
+    a: [1, a1/a0, a2/a0]
+  };
+}
+
+function filtForward(x, {b, a}) {
+  const y = new Float64Array(x.length);
+  for (let n = 0; n < x.length; n++) {
+    let v = b[0]*x[n];
+    if (n >= 1) v += b[1]*x[n-1] - a[1]*y[n-1];
+    if (n >= 2) v += b[2]*x[n-2] - a[2]*y[n-2];
+    y[n] = v;
+  }
+  return y;
+}
+
+function filtfilt(x, coef) {
+  // zero-phase: forward filter, reverse, filter again, reverse
+  const f1 = filtForward(x, coef);
+  const rev = new Float64Array(f1.length);
+  for (let i = 0; i < f1.length; i++) rev[i] = f1[f1.length-1-i];
+  const f2 = filtForward(rev, coef);
+  const out = new Float64Array(f2.length);
+  for (let i = 0; i < f2.length; i++) out[i] = f2[f2.length-1-i];
+  return out;
+}
+
+// FFT via naive DFT for small windows (good enough at ~300 samples)
+// Returns magnitudes at frequencies 0..fs/2
+function fftMagnitudes(signal, fs) {
+  const N = signal.length;
+  // Use real FFT via Cooley-Tukey if power of 2, else naive DFT
+  // For robustness use a simple implementation.
+  const mean = signal.reduce((a,b)=>a+b, 0) / N;
+  const window = new Float64Array(N);
+  for (let i = 0; i < N; i++) {
+    // Hamming window
+    const w = 0.54 - 0.46 * Math.cos(2*Math.PI*i/(N-1));
+    window[i] = (signal[i] - mean) * w;
+  }
+  // Number of freq bins: N/2 + 1
+  const bins = Math.floor(N/2) + 1;
+  const re = new Float64Array(bins);
+  const im = new Float64Array(bins);
+  for (let k = 0; k < bins; k++) {
+    let sr = 0, si = 0;
+    const c = -2*Math.PI*k/N;
+    for (let n = 0; n < N; n++) {
+      const ang = c * n;
+      sr += window[n] * Math.cos(ang);
+      si += window[n] * Math.sin(ang);
+    }
+    re[k] = sr;
+    im[k] = si;
+  }
+  const mag = new Float64Array(bins);
+  const freqs = new Float64Array(bins);
+  for (let k = 0; k < bins; k++) {
+    mag[k] = Math.sqrt(re[k]*re[k] + im[k]*im[k]);
+    freqs[k] = k * fs / N;
+  }
+  return { mag, freqs };
+}
+
+function estimateHrFft(signal, fs) {
+  if (signal.length < fs * 3) return { hr: 0, confidence: 0 };
+  const { mag, freqs } = fftMagnitudes(signal, fs);
+  let peakIdx = -1, peakVal = -1, totalBand = 0;
+  for (let k = 0; k < mag.length; k++) {
+    if (freqs[k] >= HR_LOW_HZ && freqs[k] <= HR_HIGH_HZ) {
+      totalBand += mag[k];
+      if (mag[k] > peakVal) { peakVal = mag[k]; peakIdx = k; }
+    }
+  }
+  if (peakIdx < 0) return { hr: 0, confidence: 0 };
+
+  // Parabolic interpolation for sub-bin resolution
+  let frac = 0;
+  if (peakIdx > 0 && peakIdx < mag.length - 1) {
+    const y0 = mag[peakIdx-1], y1 = mag[peakIdx], y2 = mag[peakIdx+1];
+    const denom = y0 - 2*y1 + y2;
+    if (Math.abs(denom) > 1e-12) frac = 0.5 * (y0 - y2) / denom;
+  }
+  const binHz = freqs[1] - freqs[0];
+  const refinedHz = freqs[peakIdx] + frac * binHz;
+  const hr = Math.max(HR_LOW_HZ*60, Math.min(HR_HIGH_HZ*60, refinedHz * 60));
+  const confidence = Math.min(1, (peakVal / (totalBand + 1e-9)) * 4);
+  return { hr, confidence };
+}
+
+function roiSnr(signal, fs) {
+  const { mag, freqs } = fftMagnitudes(signal, fs);
+  let peakPower = 0, totalPower = 0;
+  for (let k = 0; k < mag.length; k++) {
+    const p = mag[k] * mag[k];
+    totalPower += p;
+    if (freqs[k] >= HR_LOW_HZ && freqs[k] <= HR_HIGH_HZ && p > peakPower) {
+      peakPower = p;
+    }
+  }
+  return peakPower / (totalPower + 1e-9);
+}
+
+function findPeaks(signal, minDistSamples, minProminence) {
+  const peaks = [];
+  const N = signal.length;
+  for (let i = 1; i < N - 1; i++) {
+    if (signal[i] > signal[i-1] && signal[i] > signal[i+1]) {
+      // look left/right within minDistSamples for prominence
+      let leftMin = signal[i], rightMin = signal[i];
+      const lStart = Math.max(0, i - minDistSamples);
+      const rEnd = Math.min(N-1, i + minDistSamples);
+      for (let j = i-1; j >= lStart; j--) {
+        if (signal[j] > signal[i]) break;
+        if (signal[j] < leftMin) leftMin = signal[j];
+      }
+      for (let j = i+1; j <= rEnd; j++) {
+        if (signal[j] > signal[i]) break;
+        if (signal[j] < rightMin) rightMin = signal[j];
+      }
+      const base = Math.max(leftMin, rightMin);
+      const prominence = signal[i] - base;
+      if (prominence >= minProminence) {
+        // Dedup with previous peak
+        if (peaks.length === 0 || (i - peaks[peaks.length-1]) >= minDistSamples) {
+          peaks.push(i);
+        } else if (signal[i] > signal[peaks[peaks.length-1]]) {
+          peaks[peaks.length-1] = i; // replace with taller one
+        }
+      }
+    }
+  }
+  return peaks;
+}
+
+// POS algorithm: uses R, G, B to cancel motion
+function posAlgorithm(rgbBuf, fs) {
+  const N = rgbBuf.length;
+  const winSamples = Math.floor(1.6 * fs);
+  if (N < winSamples + 1) {
+    // Fall back to green
+    const greens = new Float64Array(N);
+    let mean = 0;
+    for (let i = 0; i < N; i++) mean += rgbBuf[i].g;
+    mean /= N;
+    for (let i = 0; i < N; i++) greens[i] = rgbBuf[i].g - mean;
+    return greens;
+  }
+  const H = new Float64Array(N);
+  for (let n = winSamples; n < N; n++) {
+    let muR=0, muG=0, muB=0;
+    for (let i = n-winSamples; i < n; i++) {
+      muR += rgbBuf[i].r; muG += rgbBuf[i].g; muB += rgbBuf[i].b;
+    }
+    muR /= winSamples; muG /= winSamples; muB /= winSamples;
+    // Normalize
+    const S1 = new Float64Array(winSamples);
+    const S2 = new Float64Array(winSamples);
+    let sum1sq = 0, sum2sq = 0;
+    for (let i = 0; i < winSamples; i++) {
+      const idx = n - winSamples + i;
+      const rn = rgbBuf[idx].r / (muR + 1e-9);
+      const gn = rgbBuf[idx].g / (muG + 1e-9);
+      const bn = rgbBuf[idx].b / (muB + 1e-9);
+      S1[i] = gn - bn;
+      S2[i] = gn + bn - 2*rn;
+      sum1sq += S1[i]*S1[i];
+      sum2sq += S2[i]*S2[i];
+    }
+    const std1 = Math.sqrt(sum1sq/winSamples);
+    const std2 = Math.sqrt(sum2sq/winSamples) + 1e-9;
+    const alpha = std1 / std2;
+    let meanH = 0;
+    const h = new Float64Array(winSamples);
+    for (let i = 0; i < winSamples; i++) {
+      h[i] = S1[i] + alpha * S2[i];
+      meanH += h[i];
+    }
+    meanH /= winSamples;
+    for (let i = 0; i < winSamples; i++) {
+      H[n-winSamples+i] += (h[i] - meanH);
+    }
+  }
+  return H;
+}
+
+// ========================= BEAT STORE =========================
+class BeatStore {
+  constructor(tolSec = BEAT_DEDUP_SEC) {
+    this.times = [];
+    this.tol = tolSec;
+  }
+  add(t) {
+    if (this.times.length === 0) { this.times.push(t); return true; }
+    // binary search
+    let lo = 0, hi = this.times.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (this.times[mid] < t) lo = mid + 1;
+      else hi = mid;
+    }
+    if (lo > 0 && (t - this.times[lo-1]) < this.tol) return false;
+    if (lo < this.times.length && (this.times[lo] - t) < this.tol) return false;
+    this.times.splice(lo, 0, t);
+    return true;
+  }
+  recent(n) {
+    return this.times.slice(Math.max(0, this.times.length - n));
+  }
+}
+
+// ========================= ROI STATE =========================
+class RoiState {
+  constructor(name) {
+    this.name = name;
+    this.rgbBuf = [];         // {r,g,b,t}
+    this.filtered = null;
+    this.snrGreen = 0;
+    this.snrPos = 0;
+    this.snr = 0;
+    this.algo = null;
+  }
+  addSample(r, g, b, t) {
+    this.rgbBuf.push({r, g, b, t});
+  }
+  trim(bufSec) {
+    while (this.rgbBuf.length > 1 &&
+          (this.rgbBuf[this.rgbBuf.length-1].t - this.rgbBuf[0].t) > bufSec) {
+      this.rgbBuf.shift();
+    }
+  }
+  process(fs) {
+    if (this.rgbBuf.length < fs * MIN_ANALYSIS_SEC) {
+      this.filtered = null; this.snr = 0; this.algo = null; return;
+    }
+    // Green-only path
+    let greenFilt = null, gSnr = 0;
+    try {
+      const gVals = new Float64Array(this.rgbBuf.length);
+      let gMean = 0;
+      for (let i = 0; i < this.rgbBuf.length; i++) gMean += this.rgbBuf[i].g;
+      gMean /= this.rgbBuf.length;
+      for (let i = 0; i < this.rgbBuf.length; i++) gVals[i] = this.rgbBuf[i].g - gMean;
+      const coef = designBandpass(fs, HR_LOW_HZ, HR_HIGH_HZ);
+      greenFilt = filtfilt(gVals, coef);
+      gSnr = roiSnr(greenFilt, fs);
+    } catch(e) { greenFilt = null; gSnr = 0; }
+
+    // POS path
+    let posFilt = null, pSnr = 0;
+    try {
+      const pos = posAlgorithm(this.rgbBuf, fs);
+      const coef = designBandpass(fs, HR_LOW_HZ, HR_HIGH_HZ);
+      posFilt = filtfilt(pos, coef);
+      pSnr = roiSnr(posFilt, fs);
+    } catch(e) { posFilt = null; pSnr = 0; }
+
+    this.snrGreen = gSnr;
+    this.snrPos = pSnr;
+
+    if (greenFilt === null && posFilt === null) {
+      this.filtered = null; this.snr = 0; this.algo = null;
+    } else if (gSnr >= pSnr && greenFilt !== null) {
+      this.filtered = greenFilt; this.snr = gSnr; this.algo = "green";
+    } else {
+      this.filtered = posFilt; this.snr = pSnr; this.algo = "pos";
+    }
+  }
+  getTimes() {
+    return this.rgbBuf.map(s => s.t);
+  }
+}
+
+// ========================= MAIN STATE =========================
+const roiStates = {};
+for (const name of Object.keys(LANDMARKS)) roiStates[name] = new RoiState(name);
+
+const beats = new BeatStore();
+let running = false;
+let measuredFps = 30;
+let fpsTimes = [];
+let currentWinner = null;
+let sessionStart = 0;
+let lastProcessTime = 0;
+let liveHrIbi = 0, liveHrFft = 0, liveConf = 0;
+let rmssdVal = 0, sdnnVal = 0;
+
+// ========================= CAMERA + FACEMESH =========================
+let faceMesh = null;
+let cameraStream = null;
+let processingFrame = false;
+
+async function startCamera() {
+  try {
+    // Prefer user-facing camera on mobile
+    const constraints = {
+      video: {
+        facingMode: 'user',
+        width:  { ideal: 1280 },
+        height: { ideal: 720 },
+        frameRate: { ideal: 30 }
+      },
+      audio: false
+    };
+    cameraStream = await navigator.mediaDevices.getUserMedia(constraints);
+    videoEl.srcObject = cameraStream;
+    await videoEl.play();
+    log('Camera started', 'ok');
+    return true;
+  } catch (e) {
+    log('Camera error: ' + e.message, 'err');
+    return false;
+  }
+}
+
+function stopCamera() {
+  if (cameraStream) {
+    cameraStream.getTracks().forEach(t => t.stop());
+    cameraStream = null;
+  }
+}
+
+async function initFaceMesh() {
+  if (faceMesh) return;
+  statusEl.textContent = 'Loading FaceMesh model...';
+  log('Loading FaceMesh...');
+  faceMesh = new FaceMesh({
+    locateFile: (f) =>
+      `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4.1633559619/${f}`
+  });
+  faceMesh.setOptions({
+    maxNumFaces: 1,
+    refineLandmarks: false,
+    minDetectionConfidence: 0.5,
+    minTrackingConfidence: 0.5,
+  });
+  faceMesh.onResults(onFaceResults);
+  await faceMesh.initialize();
+  log('FaceMesh ready', 'ok');
+  statusEl.textContent = 'Ready';
+}
+
+// ---- Process a frame from the video ----
+async function processVideoFrame() {
+  if (!running || processingFrame) {
+    if (running) requestAnimationFrame(processVideoFrame);
+    return;
+  }
+  processingFrame = true;
+  try {
+    await faceMesh.send({ image: videoEl });
+  } catch(e) {
+    log('FaceMesh send error: ' + e.message, 'err');
+  }
+  processingFrame = false;
+  if (running) requestAnimationFrame(processVideoFrame);
+}
+
+function onFaceResults(results) {
+  const now = performance.now() / 1000;
+
+  // Update FPS
+  fpsTimes.push(now);
+  if (fpsTimes.length > 60) fpsTimes.shift();
+  if (fpsTimes.length > 10) {
+    const dt = fpsTimes[fpsTimes.length-1] - fpsTimes[0];
+    measuredFps = (fpsTimes.length - 1) / dt;
+  }
+
+  // Draw overlay
+  const w = videoEl.videoWidth, h = videoEl.videoHeight;
+  overlayEl.width = w; overlayEl.height = h;
+  const ctx = overlayEl.getContext('2d');
+  ctx.clearRect(0, 0, w, h);
+
+  if (!results.multiFaceLandmarks || results.multiFaceLandmarks.length === 0) {
+    statusEl.textContent = `FPS ${measuredFps.toFixed(1)} • No face`;
+    return;
+  }
+  const lm = results.multiFaceLandmarks[0];
+
+  // Compute each ROI bounding box, sample mean R,G,B
+  const hiddenCanvas = document.createElement('canvas');
+  hiddenCanvas.width = w; hiddenCanvas.height = h;
+  const hctx = hiddenCanvas.getContext('2d');
+  hctx.drawImage(videoEl, 0, 0, w, h);
+
+  const roiBoxes = {};
+  for (const [name, idxs] of Object.entries(LANDMARKS)) {
+    let xmin=1, ymin=1, xmax=0, ymax=0;
+    for (const i of idxs) {
+      if (lm[i].x < xmin) xmin = lm[i].x;
+      if (lm[i].y < ymin) ymin = lm[i].y;
+      if (lm[i].x > xmax) xmax = lm[i].x;
+      if (lm[i].y > ymax) ymax = lm[i].y;
+    }
+    // Shrink slightly
+    const bw = xmax - xmin, bh = ymax - ymin;
+    xmin += bw * 0.12; xmax -= bw * 0.12;
+    ymin += bh * 0.12; ymax -= bh * 0.12;
+    const x = Math.max(0, Math.floor(xmin * w));
+    const y = Math.max(0, Math.floor(ymin * h));
+    const bw2 = Math.max(4, Math.floor((xmax - xmin) * w));
+    const bh2 = Math.max(4, Math.floor((ymax - ymin) * h));
+    roiBoxes[name] = {x, y, w: bw2, h: bh2};
+  }
+
+  // Sample RGB means for each ROI
+  for (const [name, box] of Object.entries(roiBoxes)) {
+    if (box.w < 4 || box.h < 4) continue;
+    const img = hctx.getImageData(box.x, box.y, box.w, box.h).data;
+    let rSum = 0, gSum = 0, bSum = 0;
+    const count = img.length / 4;
+    for (let i = 0; i < img.length; i += 4) {
+      rSum += img[i];
+      gSum += img[i+1];
+      bSum += img[i+2];
+    }
+    roiStates[name].addSample(rSum/count, gSum/count, bSum/count, now);
+    roiStates[name].trim(BUFFER_SEC);
+  }
+
+  // Process ~every 0.5s
+  if (now - lastProcessTime > 0.5 && measuredFps > 5) {
+    lastProcessTime = now;
+    for (const r of Object.values(roiStates)) r.process(measuredFps);
+
+    // Pick best ROI
+    let best = null;
+    for (const r of Object.values(roiStates)) {
+      if (r.snr >= MIN_ROI_QUALITY && (!best || r.snr > best.snr)) best = r;
+    }
+    currentWinner = best ? best.name : null;
+
+    if (best && best.filtered) {
+      // Detect beats in the winner's signal
+      const sig = best.filtered;
+      const times = best.getTimes();
+      // Normalize
+      let mean = 0;
+      for (let i = 0; i < sig.length; i++) mean += sig[i];
+      mean /= sig.length;
+      let variance = 0;
+      for (let i = 0; i < sig.length; i++) variance += (sig[i]-mean)*(sig[i]-mean);
+      const std = Math.sqrt(variance/sig.length) + 1e-9;
+      const norm = new Float64Array(sig.length);
+      for (let i = 0; i < sig.length; i++) norm[i] = sig[i] / std;
+      const minDist = Math.max(1, Math.floor(PEAK_MIN_DIST_SEC * measuredFps));
+      const peakIdxs = findPeaks(norm, minDist, PEAK_MIN_PROMINENCE);
+      const stableCutoff = now - BEAT_STABLE_DELAY;
+      for (const idx of peakIdxs) {
+        const tp = times[idx];
+        if (tp > stableCutoff) continue;
+        beats.add(tp);
+      }
+
+      // Live HR estimates (on last 10s)
+      const winN = Math.floor(WINDOW_SEC * measuredFps);
+      const winSig = sig.length > winN ? sig.slice(sig.length - winN) : sig;
+      const fftRes = estimateHrFft(winSig, measuredFps);
+      if (fftRes.confidence > 0.1 && fftRes.hr > 40 && fftRes.hr < 180) {
+        liveHrFft = fftRes.hr;
+        liveConf = fftRes.confidence;
+      }
+
+      // IBI-based HR
+      const beatTimes = beats.times;
+      const winStart = now - WINDOW_SEC;
+      const recentBeats = beatTimes.filter(t => t >= winStart && t <= now);
+      if (recentBeats.length >= 3) {
+        const ibisSec = [];
+        for (let i = 1; i < recentBeats.length; i++) {
+          const d = recentBeats[i] - recentBeats[i-1];
+          if (d > 0.3 && d < 1.5) ibisSec.push(d);
+        }
+        if (ibisSec.length >= 2) {
+          let sum = 0;
+          for (const d of ibisSec) sum += d;
+          liveHrIbi = 60 / (sum / ibisSec.length);
+        }
+      }
+
+      // HRV (from all beats so far)
+      if (beatTimes.length >= 10) {
+        const allIbis = [];
+        for (let i = 1; i < beatTimes.length; i++) {
+          const d = (beatTimes[i] - beatTimes[i-1]) * 1000;
+          if (d > 300 && d < 1500) allIbis.push(d);
+        }
+        if (allIbis.length >= 3) {
+          const meanI = allIbis.reduce((a,b)=>a+b) / allIbis.length;
+          let varI = 0;
+          for (const v of allIbis) varI += (v-meanI)*(v-meanI);
+          sdnnVal = Math.sqrt(varI / allIbis.length);
+          let sumSq = 0, n = 0;
+          for (let i = 1; i < allIbis.length; i++) {
+            const d = allIbis[i] - allIbis[i-1];
+            sumSq += d*d; n++;
+          }
+          if (n > 0) rmssdVal = Math.sqrt(sumSq / n);
+        }
+      }
+    }
+    updateDisplay();
+    drawWaveform();
+  }
+
+  // Draw ROI boxes
+  for (const [name, box] of Object.entries(roiBoxes)) {
+    const isWinner = name === currentWinner;
+    ctx.strokeStyle = isWinner ? '#4ade80' : 'rgba(255,255,255,0.4)';
+    ctx.lineWidth = isWinner ? 3 : 1;
+    ctx.strokeRect(box.x, box.y, box.w, box.h);
+    ctx.fillStyle = isWinner ? '#4ade80' : 'rgba(255,255,255,0.6)';
+    ctx.font = '12px sans-serif';
+    ctx.fillText(name + (isWinner ? ' ★' : ''), box.x, box.y - 4);
+  }
+
+  statusEl.textContent = `FPS ${measuredFps.toFixed(1)} • ` +
+    `Beats: ${beats.times.length} • ` +
+    (currentWinner ? `Using: ${currentWinner}` : 'Finding signal...');
+}
+
+// ========================= DISPLAY UPDATE =========================
+function updateDisplay() {
+  hrIbiEl.textContent = liveHrIbi > 0 ? liveHrIbi.toFixed(0) : '--';
+  hrFftEl.textContent = liveHrFft > 0 ? liveHrFft.toFixed(0) : '--';
+  rmssdEl.textContent = rmssdVal > 0 ? rmssdVal.toFixed(0) : '--';
+  sdnnEl.textContent  = sdnnVal > 0 ? sdnnVal.toFixed(0) : '--';
+
+  // Agreement
+  if (liveHrIbi > 0 && liveHrFft > 0) {
+    const diff = Math.abs(liveHrIbi - liveHrFft);
+    if (diff < 5) {
+      agreeEl.textContent = 'Good ✓';
+      agreeEl.style.color = 'var(--good)';
+      agreeSub.textContent = `within ${diff.toFixed(1)} bpm — trustworthy`;
+    } else if (diff < 15) {
+      agreeEl.textContent = 'Marginal';
+      agreeEl.style.color = 'var(--mid)';
+      agreeSub.textContent = `${diff.toFixed(1)} bpm apart — uncertain`;
+    } else {
+      agreeEl.textContent = 'Poor ✗';
+      agreeEl.style.color = 'var(--bad)';
+      agreeSub.textContent = `${diff.toFixed(1)} bpm apart — don't trust`;
+    }
+  } else {
+    agreeEl.textContent = '--';
+    agreeEl.style.color = 'var(--muted)';
+    agreeSub.textContent = 'need both estimates';
+  }
+
+  // Quality list
+  qualList.innerHTML = '';
+  const sorted = Object.entries(roiStates).sort((a,b) => b[1].snr - a[1].snr);
+  for (const [name, r] of sorted) {
+    const row = document.createElement('div');
+    row.className = 'quality-row';
+    if (name === currentWinner) row.classList.add('best');
+    const lbl = document.createElement('span');
+    lbl.className = 'name';
+    lbl.textContent = name + (r.algo ? ` [${r.algo}]` : '');
+    const val = document.createElement('span');
+    val.className = 'val';
+    val.textContent = 'q=' + r.snr.toFixed(3);
+    row.appendChild(lbl);
+    row.appendChild(val);
+    qualList.appendChild(row);
+  }
+}
+
+function drawWaveform() {
+  const ctx = waveCtx;
+  const W = waveCanvas.clientWidth, H = waveCanvas.clientHeight;
+  // Ensure internal resolution matches display
+  if (waveCanvas.width !== W || waveCanvas.height !== H) {
+    waveCanvas.width = W; waveCanvas.height = H;
+  }
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = '#11131a';
+  ctx.fillRect(0, 0, W, H);
+  ctx.strokeStyle = '#2a2f3d';
+  ctx.beginPath(); ctx.moveTo(0, H/2); ctx.lineTo(W, H/2); ctx.stroke();
+
+  if (!currentWinner) return;
+  const winner = roiStates[currentWinner];
+  if (!winner.filtered) return;
+  const sig = winner.filtered;
+  const times = winner.getTimes();
+  // Last 8 seconds only
+  const dispSec = 8;
+  const n = Math.floor(Math.min(sig.length, dispSec * measuredFps));
+  const seg = sig.slice(sig.length - n);
+  const tSeg = times.slice(times.length - n);
+  // Normalize for display
+  let mean = 0, maxAbs = 0;
+  for (let i = 0; i < seg.length; i++) mean += seg[i];
+  mean /= seg.length;
+  let variance = 0;
+  for (let i = 0; i < seg.length; i++) variance += (seg[i]-mean)*(seg[i]-mean);
+  const std = Math.sqrt(variance/seg.length) + 1e-9;
+  for (let i = 0; i < seg.length; i++) {
+    const v = (seg[i] - mean) / std;
+    if (Math.abs(v) > maxAbs) maxAbs = Math.abs(v);
+  }
+  if (maxAbs < 0.1) maxAbs = 1;
+  ctx.strokeStyle = '#60a5fa';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  for (let i = 0; i < seg.length; i++) {
+    const v = (seg[i] - mean) / std;
+    const x = (i / (seg.length-1)) * W;
+    const y = H/2 - (v / maxAbs) * (H/2 * 0.8);
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+
+  // Beat dots
+  if (tSeg.length === 0) return;
+  const t0 = tSeg[0], t1 = tSeg[tSeg.length-1];
+  ctx.fillStyle = '#4ade80';
+  const recentBeats = beats.times.filter(t => t >= t0 && t <= t1);
+  for (const tb of recentBeats) {
+    const rel = (tb - t0) / (t1 - t0 + 1e-9);
+    const x = rel * W;
+    ctx.beginPath();
+    ctx.arc(x, H/2, 4, 0, 2*Math.PI);
+    ctx.fill();
+  }
+}
+
+// ========================= START / STOP =========================
+async function startSession() {
+  startBtn.disabled = true;
+  stopBtn.disabled = false;
+  statusEl.textContent = 'Starting...';
+  for (const r of Object.values(roiStates)) {
+    r.rgbBuf = []; r.filtered = null; r.snr = 0;
+  }
+  beats.times = [];
+  liveHrIbi = 0; liveHrFft = 0; rmssdVal = 0; sdnnVal = 0;
+  sessionStart = performance.now() / 1000;
+  if (!await startCamera()) {
+    startBtn.disabled = false;
+    stopBtn.disabled = true;
+    return;
+  }
+  await initFaceMesh();
+  running = true;
+  requestAnimationFrame(processVideoFrame);
+  log('Session started — hold still, face the camera', 'ok');
+}
+
+function stopSession() {
+  running = false;
+  stopCamera();
+  startBtn.disabled = false;
+  stopBtn.disabled = true;
+  statusEl.textContent = 'Stopped';
+  log('Session stopped');
+}
+
+startBtn.addEventListener('click', startSession);
+stopBtn.addEventListener('click', stopSession);
+
+// Check for secure context
+if (!window.isSecureContext) {
+  log('WARNING: camera requires HTTPS or localhost', 'warn');
+}
+if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+  log('ERROR: browser does not support camera access', 'err');
+  startBtn.disabled = true;
+}
+</script>
+</body>
+</html>
