@@ -673,13 +673,23 @@ function processFrame() {
   // We don't want old partial data carried into a new attempt.
   if (prevState === 'confirmed' && state !== 'confirmed') {
     log('Finger lost — restarting analysis', 'warn');
-    recalculatingUntil = now + 2.0;   // show the recalculating message briefly
-    // Wipe all analysis buffers; the session start time is reset too
+    recalculatingUntil = now + 2.0;
+    // Wipe all analysis buffers
     redBuf = []; timeBuf = [];
     fullRed = []; fullTime = [];
     beats.clear();
     liveHrIbi = 0; liveHrFft = 0; liveSnr = 0;
-    sessionStart = now;   // clock restarts from here
+    // Reset clock so timer starts from 00:00 for the new attempt
+    sessionStart = now;
+    timerEl.textContent = '00:00';
+    // Reset displayed metrics immediately so user doesn't see stale values
+    hrIbiEl.textContent = '--';
+    hrFftEl.textContent = '--';
+    meanIbiEl.textContent = '--';
+    beatsCountEl.textContent = '--';
+    snrValEl.textContent = '--';
+    snrSubEl.textContent = 'SNR in HR band';
+    snrValEl.style.color = '';
   }
 
   // Update banner. Special "recalculating" override takes priority.
