@@ -2,10 +2,10 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no" />
 <meta name="mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
-<title>rPPG HR + HRV Monitor</title>
+<title>Contact PPG — HR Monitor</title>
 <style>
   :root {
     --bg: #0f1117;
@@ -20,54 +20,73 @@
     --accent2: #f97316;
     --purple: #a855f7;
   }
-  * { box-sizing: border-box; margin: 0; padding: 0; }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
   html, body {
-    background: var(--bg); color: var(--text);
+    background: var(--bg); color: var(--text); min-height: 100vh;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    font-size: 14px; min-height: 100vh;
+    font-size: 14px;
   }
   .app {
-    max-width: 680px; margin: 0 auto;
+    max-width: 640px; margin: 0 auto;
     padding: 12px; display: flex; flex-direction: column; gap: 12px;
   }
   h1 { font-size: 18px; font-weight: 600; text-align: center; }
-  .disclaimer {
-    font-size: 11px; color: var(--muted);
-    text-align: center; padding: 0 16px;
-  }
-  .video-wrap {
+  .disclaimer { font-size: 11px; color: var(--muted); text-align: center; padding: 0 16px; }
+  .preview {
     position: relative; background: #000;
     border-radius: 12px; overflow: hidden; aspect-ratio: 4 / 3;
+    display: flex; flex-direction: column;
   }
-  video, canvas.overlay {
+  video {
     width: 100%; height: 100%; object-fit: cover; display: block;
   }
-  canvas.overlay { position: absolute; inset: 0; pointer-events: none; }
-  .video-status {
-    position: absolute; top: 8px; left: 8px;
-    background: rgba(0,0,0,0.6); padding: 4px 8px;
-    border-radius: 6px; font-size: 11px; color: var(--muted);
+  .banner {
+    position: absolute; top: 0; left: 0; right: 0;
+    padding: 14px;
+    font-weight: 700; font-size: 15px; text-align: center;
+    color: #fff;
+    background: #444;
+    transition: background 0.25s;
+  }
+  .banner.no_finger  { background: #ef4444; }
+  .banner.detecting  { background: #fbbf24; color: #000; }
+  .banner.confirmed  { background: #16a34a; }
+  .reason {
+    position: absolute; top: 52px; left: 0; right: 0;
+    padding: 6px 12px; font-size: 12px;
+    color: #eee; background: rgba(0,0,0,0.6); text-align: center;
   }
   .timer-badge {
-    position: absolute; top: 8px; right: 8px;
-    background: rgba(0,0,0,0.6); padding: 6px 12px;
+    position: absolute; bottom: 8px; right: 8px;
+    background: rgba(0,0,0,0.7); padding: 6px 12px;
     border-radius: 8px; font-size: 18px; font-weight: 700;
     color: var(--accent); font-variant-numeric: tabular-nums;
     letter-spacing: 1px;
   }
   .timer-badge.running { color: var(--good); }
+  .fps-badge {
+    position: absolute; bottom: 8px; left: 8px;
+    background: rgba(0,0,0,0.7); padding: 4px 10px;
+    border-radius: 6px; font-size: 11px; color: #ccc;
+  }
+  .sampling-ring {
+    position: absolute; top: 50%; left: 50%;
+    width: 60%; height: 60%;
+    transform: translate(-50%, -50%);
+    border: 2px dashed rgba(255,255,255,0.6);
+    border-radius: 16px;
+    pointer-events: none;
+  }
   .controls { display: flex; gap: 8px; }
   button {
-    flex: 1; padding: 12px;
+    flex: 1; padding: 14px;
     background: var(--accent); color: #000; border: none;
-    border-radius: 8px; font-size: 15px; font-weight: 600; cursor: pointer;
+    border-radius: 8px; font-size: 16px; font-weight: 700; cursor: pointer;
   }
   button.secondary { background: var(--panel); color: var(--text); border: 1px solid var(--border); }
   button.danger { background: var(--bad); color: #fff; }
-  button:disabled { opacity: 0.4; cursor: not-allowed; }
-  .metrics {
-    display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
-  }
+  button:disabled { opacity: 0.4; }
+  .metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
   .metric {
     background: var(--panel); border: 1px solid var(--border);
     border-radius: 8px; padding: 10px 12px;
@@ -77,7 +96,7 @@
     text-transform: uppercase; letter-spacing: 0.5px;
   }
   .metric .value {
-    font-size: 24px; font-weight: 700; margin-top: 2px;
+    font-size: 26px; font-weight: 700; margin-top: 2px;
     font-variant-numeric: tabular-nums;
   }
   .metric .sub { font-size: 11px; color: var(--muted); margin-top: 2px; }
@@ -92,29 +111,24 @@
   }
   canvas.chart { width: 100%; height: 120px; display: block; }
 
-  /* Results modal (shown after Stop) */
+  .toggle-row {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 8px 12px; background: var(--panel);
+    border-radius: 8px; border: 1px solid var(--border);
+    font-size: 13px;
+  }
+  .toggle-row input { transform: scale(1.3); margin-left: 8px; }
+
+  /* Results view */
   .results-wrap { display: none; }
   .results-wrap.show { display: flex; flex-direction: column; gap: 12px; }
   .results-header {
-    display: flex; justify-content: space-between; align-items: center;
-    padding: 8px 0;
+    display: flex; justify-content: space-between; align-items: center; padding: 8px 0;
   }
   .results-header h2 { font-size: 16px; }
-  .summary-grid {
-    display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
-  }
-  canvas.full-chart {
-    width: 100%; display: block;
-    background: #0a0c12; border-radius: 4px;
-  }
-  .chart-caption {
-    font-size: 11px; color: var(--muted); text-align: center;
-    margin-top: 2px;
-  }
-  .quality-row { display: flex; justify-content: space-between; font-size: 12px; padding: 2px 0; }
-  .quality-row .name { color: var(--muted); }
-  .quality-row .val { font-variant-numeric: tabular-nums; font-weight: 600; }
-  .quality-row.best .name, .quality-row.best .val { color: var(--good); }
+  .summary-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  canvas.full-chart { width: 100%; display: block; background: #0a0c12; border-radius: 4px; }
+  .chart-caption { font-size: 11px; color: var(--muted); text-align: center; margin-top: 2px; }
   .verdict {
     padding: 12px; border-radius: 8px; text-align: center;
     font-size: 13px; line-height: 1.5;
@@ -122,6 +136,7 @@
   .verdict.trust { background: rgba(74,222,128,0.1); border: 1px solid var(--good); color: var(--good); }
   .verdict.marginal { background: rgba(251,191,36,0.1); border: 1px solid var(--mid); color: var(--mid); }
   .verdict.bad { background: rgba(239,68,68,0.1); border: 1px solid var(--bad); color: var(--bad); }
+
   .log {
     font-size: 11px; color: var(--muted); max-height: 80px;
     overflow-y: auto; font-family: ui-monospace, monospace; line-height: 1.4;
@@ -129,27 +144,38 @@
   .warn { color: var(--mid); }
   .err { color: var(--bad); }
   .ok { color: var(--good); }
+  .small { font-size: 11px; color: var(--muted); }
 </style>
 </head>
 <body>
 <div class="app">
-  <h1>rPPG Heart Rate + HRV</h1>
-  <div class="disclaimer">Not a medical device. Sit still, face the camera, good lighting.</div>
+  <h1>Contact PPG — Heart Rate</h1>
+  <div class="disclaimer">
+    Place fingertip gently over the <strong>rear camera + flash</strong>.
+    Don't press hard. Not a medical device.
+  </div>
 
   <!-- LIVE VIEW -->
   <div id="liveView">
-    <div class="video-wrap">
+    <div class="preview">
       <video id="video" playsinline muted autoplay></video>
-      <canvas id="overlay" class="overlay"></canvas>
-      <div class="video-status" id="status">Not started</div>
+      <div class="banner no_finger" id="banner">PLACE FINGER ON CAMERA</div>
+      <div class="reason" id="reason"></div>
+      <div class="sampling-ring"></div>
+      <div class="fps-badge" id="fpsBadge">FPS --</div>
       <div class="timer-badge" id="timer">00:00</div>
     </div>
-    <div style="height:8px"></div>
+
     <div class="controls">
       <button id="startBtn">Start</button>
       <button id="stopBtn" class="danger" disabled>Stop</button>
     </div>
-    <div style="height:12px"></div>
+
+    <div class="toggle-row">
+      <span>Auto-turn on flashlight (Android only)</span>
+      <input type="checkbox" id="torchToggle" checked>
+    </div>
+
     <div class="metrics">
       <div class="metric">
         <div class="label">HR (IBI)</div>
@@ -172,27 +198,24 @@
         <div class="sub">ms</div>
       </div>
       <div class="metric wide">
-        <div class="label">Agreement</div>
-        <div class="value" id="agreement">--</div>
-        <div class="sub" id="agreementSub">trust indicator</div>
+        <div class="label">Signal Quality</div>
+        <div class="value" id="snrVal">--</div>
+        <div class="sub" id="snrSub">SNR in HR band</div>
       </div>
     </div>
-    <div style="height:12px"></div>
+
     <div class="panel">
-      <h3>Pulse waveform (live, ~8s)</h3>
+      <h3>Pulse waveform (live)</h3>
       <canvas id="waveChart" class="chart"></canvas>
     </div>
-    <div class="panel">
-      <h3>Signal quality (SNR per ROI)</h3>
-      <div id="qualityList"></div>
-    </div>
+
     <div class="panel">
       <h3>Log</h3>
       <div class="log" id="log"></div>
     </div>
   </div>
 
-  <!-- RESULTS VIEW (shown after Stop) -->
+  <!-- RESULTS VIEW -->
   <div class="results-wrap" id="resultsView">
     <div class="results-header">
       <h2>Session Results</h2>
@@ -200,32 +223,23 @@
     </div>
     <div class="verdict" id="verdict"></div>
     <div class="panel">
-      <h3 id="summaryTitle">Summary</h3>
+      <h3>Summary</h3>
       <div class="summary-grid" id="summaryGrid"></div>
     </div>
     <div class="panel">
-      <h3>Panel 1 — Best-ROI pulse with beats</h3>
+      <h3>Panel 1 — PPG pulse with beats</h3>
       <canvas class="full-chart" id="chart1" height="260"></canvas>
       <div class="chart-caption" id="caption1"></div>
     </div>
     <div class="panel">
-      <h3>Panel 2 — Per-ROI signals (overlapped)</h3>
-      <canvas class="full-chart" id="chart2" height="260"></canvas>
+      <h3>Panel 2 — Heart rate (IBI vs FFT)</h3>
+      <canvas class="full-chart" id="chart2" height="220"></canvas>
       <div class="chart-caption" id="caption2"></div>
     </div>
     <div class="panel">
-      <h3>Panel 3 — Heart rate (IBI vs FFT)</h3>
-      <canvas class="full-chart" id="chart3" height="220"></canvas>
+      <h3>Panel 3 — Inter-Beat Intervals (IBI)</h3>
+      <canvas class="full-chart" id="chart3" height="180"></canvas>
       <div class="chart-caption" id="caption3"></div>
-    </div>
-    <div class="panel">
-      <h3>Panel 4 — Inter-Beat Intervals (IBI)</h3>
-      <canvas class="full-chart" id="chart4" height="180"></canvas>
-      <div class="chart-caption" id="caption4"></div>
-    </div>
-    <div class="panel">
-      <h3>Quality per ROI</h3>
-      <div id="resultsQuality"></div>
     </div>
     <div class="controls">
       <button id="downloadJsonBtn" class="secondary">Download JSON</button>
@@ -234,70 +248,68 @@
   </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4.1633559619/face_mesh.min.js" crossorigin="anonymous"></script>
-
 <script>
-// =============== PARAMETERS ===============
-const HR_LOW_HZ = 0.67, HR_HIGH_HZ = 3.0;
-const BUFFER_SEC = 30, WINDOW_SEC = 10;
-const PEAK_MIN_PROMINENCE = 0.25;
-const PEAK_MIN_DIST_SEC = 0.33;
-const BEAT_DEDUP_SEC = 0.25;
-const BEAT_STABLE_DELAY = 0.6;
-const MIN_ROI_QUALITY = 0.05;
-const MIN_ANALYSIS_SEC = 6;
-const FILTER_WARMUP_SEC = 2.0;
+// ================== PARAMETERS ==================
+const HR_LOW_HZ  = 0.67;
+const HR_HIGH_HZ = 3.0;
+const BUFFER_SEC = 30;
+const MIN_ANALYSIS_SEC = 4;
+const HR_WIN_SEC = 8;
 
-const LANDMARKS = {
-  forehead:   [10, 67, 69, 104, 108, 151, 337, 338, 299, 297],
-  left_cheek: [205, 187, 123, 117, 118, 101, 36, 142],
-  right_cheek:[425, 411, 352, 346, 347, 330, 266, 371],
-};
-const ROI_COLORS = {
-  forehead:    '#e67e22',
-  left_cheek:  '#3498db',
-  right_cheek: '#9b59b6',
-};
+// Finger detection gates
+const FINGER_R_MIN         = 150;
+const FINGER_R_MAX         = 250;
+const FINGER_G_MAX         = 150;
+const FINGER_RG_RATIO_MIN  = 1.8;
+const FINGER_STD_MAX       = 35;
+const FINGER_CONFIRM_SEC   = 3.0;
+const FINGER_PULSE_SNR_MIN = 0.05;
 
-// =============== UI ELEMENTS ===============
-const videoEl = document.getElementById('video');
-const overlayEl = document.getElementById('overlay');
-const statusEl = document.getElementById('status');
-const timerEl = document.getElementById('timer');
-const startBtn = document.getElementById('startBtn');
-const stopBtn = document.getElementById('stopBtn');
-const backBtn = document.getElementById('backBtn');
-const downloadJsonBtn = document.getElementById('downloadJsonBtn');
-const liveView = document.getElementById('liveView');
+// Peak detection
+const PEAK_MIN_PROMINENCE = 0.3;
+const PEAK_MIN_DIST_SEC   = 0.33;
+const BEAT_DEDUP_SEC      = 0.25;
+
+// ================== ELEMENTS ==================
+const videoEl   = document.getElementById('video');
+const bannerEl  = document.getElementById('banner');
+const reasonEl  = document.getElementById('reason');
+const timerEl   = document.getElementById('timer');
+const fpsBadge  = document.getElementById('fpsBadge');
+const startBtn  = document.getElementById('startBtn');
+const stopBtn   = document.getElementById('stopBtn');
+const backBtn   = document.getElementById('backBtn');
+const torchToggle = document.getElementById('torchToggle');
+const liveView  = document.getElementById('liveView');
 const resultsView = document.getElementById('resultsView');
-const hrIbiEl = document.getElementById('hrIbi');
-const hrFftEl = document.getElementById('hrFft');
-const rmssdEl = document.getElementById('rmssd');
-const sdnnEl = document.getElementById('sdnn');
-const agreeEl = document.getElementById('agreement');
-const agreeSub = document.getElementById('agreementSub');
-const waveCanvas = document.getElementById('waveChart');
-const waveCtx = waveCanvas.getContext('2d');
-const qualList = document.getElementById('qualityList');
-const logEl = document.getElementById('log');
+const hrIbiEl   = document.getElementById('hrIbi');
+const hrFftEl   = document.getElementById('hrFft');
+const rmssdEl   = document.getElementById('rmssd');
+const sdnnEl    = document.getElementById('sdnn');
+const snrValEl  = document.getElementById('snrVal');
+const snrSubEl  = document.getElementById('snrSub');
+const waveCanvas= document.getElementById('waveChart');
+const waveCtx   = waveCanvas.getContext('2d');
+const logEl     = document.getElementById('log');
+const downloadJsonBtn = document.getElementById('downloadJsonBtn');
 
 function log(msg, cls='') {
   const line = document.createElement('div');
   if (cls) line.className = cls;
   line.textContent = new Date().toLocaleTimeString() + '  ' + msg;
   logEl.prepend(line);
-  while (logEl.children.length > 50) logEl.removeChild(logEl.lastChild);
+  while (logEl.children.length > 40) logEl.removeChild(logEl.lastChild);
 }
 
-// =============== SIGNAL PROCESSING ===============
+// ================== SIGNAL MATH ==================
 function designBandpass(fs, low, high) {
-  const fc = Math.sqrt(low * high), bw = high - low;
+  const fc = Math.sqrt(low*high), bw = high - low;
   const Q = fc / bw;
-  const omega = 2 * Math.PI * fc / fs;
-  const alpha = Math.sin(omega) / (2 * Q);
+  const omega = 2*Math.PI*fc/fs;
+  const alpha = Math.sin(omega)/(2*Q);
   const cosw = Math.cos(omega);
   const b0 = alpha, b1 = 0, b2 = -alpha;
-  const a0 = 1 + alpha, a1 = -2*cosw, a2 = 1 - alpha;
+  const a0 = 1+alpha, a1 = -2*cosw, a2 = 1-alpha;
   return { b:[b0/a0,b1/a0,b2/a0], a:[1,a1/a0,a2/a0] };
 }
 function filtForward(x, {b,a}) {
@@ -319,315 +331,238 @@ function filtfilt(x, coef) {
   for (let i = 0; i < f2.length; i++) out[i] = f2[f2.length-1-i];
   return out;
 }
-function fftMagnitudes(signal, fs) {
+function fftMag(signal, fs) {
   const N = signal.length;
-  const mean = signal.reduce((a,b)=>a+b, 0) / N;
-  const window = new Float64Array(N);
+  const mean = signal.reduce((a,b)=>a+b,0)/N;
+  const w = new Float64Array(N);
   for (let i = 0; i < N; i++) {
-    const w = 0.54 - 0.46*Math.cos(2*Math.PI*i/(N-1));
-    window[i] = (signal[i] - mean) * w;
+    const h = 0.54 - 0.46*Math.cos(2*Math.PI*i/(N-1));
+    w[i] = (signal[i]-mean)*h;
   }
-  const bins = Math.floor(N/2) + 1;
+  const bins = Math.floor(N/2)+1;
   const re = new Float64Array(bins), im = new Float64Array(bins);
   for (let k = 0; k < bins; k++) {
     let sr=0, si=0; const c = -2*Math.PI*k/N;
     for (let n = 0; n < N; n++) {
-      sr += window[n] * Math.cos(c*n);
-      si += window[n] * Math.sin(c*n);
+      sr += w[n]*Math.cos(c*n);
+      si += w[n]*Math.sin(c*n);
     }
     re[k]=sr; im[k]=si;
   }
-  const mag = new Float64Array(bins);
-  const freqs = new Float64Array(bins);
+  const mag = new Float64Array(bins), freqs = new Float64Array(bins);
   for (let k = 0; k < bins; k++) {
     mag[k] = Math.sqrt(re[k]*re[k] + im[k]*im[k]);
-    freqs[k] = k * fs / N;
+    freqs[k] = k*fs/N;
   }
   return { mag, freqs };
 }
 function estimateHrFft(signal, fs) {
   if (signal.length < fs*3) return { hr:0, confidence:0 };
-  const { mag, freqs } = fftMagnitudes(signal, fs);
-  let peakIdx=-1, peakVal=-1, totalBand=0;
+  const { mag, freqs } = fftMag(signal, fs);
+  let peakIdx=-1, peakVal=-1, total=0;
   for (let k = 0; k < mag.length; k++) {
     if (freqs[k] >= HR_LOW_HZ && freqs[k] <= HR_HIGH_HZ) {
-      totalBand += mag[k];
+      total += mag[k];
       if (mag[k] > peakVal) { peakVal = mag[k]; peakIdx = k; }
     }
   }
   if (peakIdx < 0) return { hr:0, confidence:0 };
+  // Parabolic interp
   let frac = 0;
   if (peakIdx > 0 && peakIdx < mag.length-1) {
     const y0=mag[peakIdx-1], y1=mag[peakIdx], y2=mag[peakIdx+1];
-    const denom = y0 - 2*y1 + y2;
-    if (Math.abs(denom) > 1e-12) frac = 0.5*(y0-y2)/denom;
+    const d = y0 - 2*y1 + y2;
+    if (Math.abs(d) > 1e-12) frac = 0.5*(y0-y2)/d;
   }
-  const binHz = freqs[1] - freqs[0];
-  const refinedHz = freqs[peakIdx] + frac*binHz;
-  const hr = Math.max(HR_LOW_HZ*60, Math.min(HR_HIGH_HZ*60, refinedHz*60));
-  const confidence = Math.min(1, (peakVal / (totalBand + 1e-9)) * 4);
-  return { hr, confidence };
+  const binHz = freqs[1]-freqs[0];
+  const refined = freqs[peakIdx] + frac*binHz;
+  const hr = Math.max(HR_LOW_HZ*60, Math.min(HR_HIGH_HZ*60, refined*60));
+  const conf = Math.min(1, (peakVal/(total+1e-9))*4);
+  return { hr, confidence: conf };
 }
-function roiSnr(signal, fs) {
-  const { mag, freqs } = fftMagnitudes(signal, fs);
-  let peakPower=0, totalPower=0;
+function signalSnr(signal, fs) {
+  const { mag, freqs } = fftMag(signal, fs);
+  let peak=0, total=0;
   for (let k = 0; k < mag.length; k++) {
     const p = mag[k]*mag[k];
-    totalPower += p;
-    if (freqs[k] >= HR_LOW_HZ && freqs[k] <= HR_HIGH_HZ && p > peakPower) peakPower = p;
+    total += p;
+    if (freqs[k] >= HR_LOW_HZ && freqs[k] <= HR_HIGH_HZ && p > peak) peak = p;
   }
-  return peakPower / (totalPower + 1e-9);
+  return peak/(total+1e-9);
 }
-function findPeaks(signal, minDistSamples, minProminence) {
+function findPeaks(signal, minDist, minProm) {
   const peaks = []; const N = signal.length;
   for (let i = 1; i < N-1; i++) {
     if (signal[i] > signal[i-1] && signal[i] > signal[i+1]) {
-      let leftMin = signal[i], rightMin = signal[i];
-      const lStart = Math.max(0, i - minDistSamples);
-      const rEnd = Math.min(N-1, i + minDistSamples);
-      for (let j = i-1; j >= lStart; j--) {
-        if (signal[j] > signal[i]) break;
-        if (signal[j] < leftMin) leftMin = signal[j];
-      }
-      for (let j = i+1; j <= rEnd; j++) {
-        if (signal[j] > signal[i]) break;
-        if (signal[j] < rightMin) rightMin = signal[j];
-      }
-      const prominence = signal[i] - Math.max(leftMin, rightMin);
-      if (prominence >= minProminence) {
-        if (peaks.length === 0 || (i - peaks[peaks.length-1]) >= minDistSamples) {
-          peaks.push(i);
-        } else if (signal[i] > signal[peaks[peaks.length-1]]) {
-          peaks[peaks.length-1] = i;
-        }
+      let lmin = signal[i], rmin = signal[i];
+      const lS = Math.max(0, i-minDist), rE = Math.min(N-1, i+minDist);
+      for (let j = i-1; j >= lS; j--) { if (signal[j]>signal[i]) break; if (signal[j]<lmin) lmin=signal[j]; }
+      for (let j = i+1; j <= rE; j++) { if (signal[j]>signal[i]) break; if (signal[j]<rmin) rmin=signal[j]; }
+      const prom = signal[i] - Math.max(lmin, rmin);
+      if (prom >= minProm) {
+        if (peaks.length === 0 || (i - peaks[peaks.length-1]) >= minDist) peaks.push(i);
+        else if (signal[i] > signal[peaks[peaks.length-1]]) peaks[peaks.length-1] = i;
       }
     }
   }
   return peaks;
 }
-function posAlgorithm(rgbBuf, fs) {
-  const N = rgbBuf.length;
-  const winSamples = Math.floor(1.6 * fs);
-  if (N < winSamples + 1) {
-    const greens = new Float64Array(N);
-    let mean = 0;
-    for (let i = 0; i < N; i++) mean += rgbBuf[i].g;
-    mean /= N;
-    for (let i = 0; i < N; i++) greens[i] = rgbBuf[i].g - mean;
-    return greens;
-  }
-  const H = new Float64Array(N);
-  for (let n = winSamples; n < N; n++) {
-    let muR=0, muG=0, muB=0;
-    for (let i = n-winSamples; i < n; i++) {
-      muR += rgbBuf[i].r; muG += rgbBuf[i].g; muB += rgbBuf[i].b;
-    }
-    muR /= winSamples; muG /= winSamples; muB /= winSamples;
-    const S1 = new Float64Array(winSamples), S2 = new Float64Array(winSamples);
-    let sum1sq=0, sum2sq=0;
-    for (let i = 0; i < winSamples; i++) {
-      const idx = n-winSamples+i;
-      const rn = rgbBuf[idx].r/(muR+1e-9);
-      const gn = rgbBuf[idx].g/(muG+1e-9);
-      const bn = rgbBuf[idx].b/(muB+1e-9);
-      S1[i] = gn - bn;
-      S2[i] = gn + bn - 2*rn;
-      sum1sq += S1[i]*S1[i]; sum2sq += S2[i]*S2[i];
-    }
-    const alpha = Math.sqrt(sum1sq/winSamples) / (Math.sqrt(sum2sq/winSamples) + 1e-9);
-    let meanH = 0;
-    const h = new Float64Array(winSamples);
-    for (let i = 0; i < winSamples; i++) { h[i] = S1[i] + alpha*S2[i]; meanH += h[i]; }
-    meanH /= winSamples;
-    for (let i = 0; i < winSamples; i++) H[n-winSamples+i] += (h[i] - meanH);
-  }
-  return H;
-}
 function computeHrv(ibisMs) {
   if (ibisMs.length < 3) return null;
   let ibis = ibisMs.filter(v => v > 300 && v < 1500);
-  if (ibis.length > 5) {
-    const clean = [];
-    for (let i = 0; i < ibis.length; i++) {
-      const start = Math.max(0, i-2), end = Math.min(ibis.length, i+3);
-      const sub = ibis.slice(start, end).slice().sort((a,b)=>a-b);
-      const med = sub[Math.floor(sub.length/2)];
-      if (Math.abs(ibis[i]-med)/med < 0.20) clean.push(ibis[i]);
-    }
-    if (clean.length > 0) ibis = clean;
-  }
   if (ibis.length < 3) return null;
-  const meanI = ibis.reduce((a,b)=>a+b)/ibis.length;
-  let varI = 0;
-  for (const v of ibis) varI += (v-meanI)*(v-meanI);
-  const sdnn = Math.sqrt(varI/ibis.length);
-  let sumSq = 0, n = 0, nn50 = 0;
+  const mean = ibis.reduce((a,b)=>a+b)/ibis.length;
+  let vr = 0;
+  for (const v of ibis) vr += (v-mean)*(v-mean);
+  const sdnn = Math.sqrt(vr/ibis.length);
+  let sumSq=0, n=0, nn50=0;
   for (let i = 1; i < ibis.length; i++) {
     const d = ibis[i]-ibis[i-1];
     sumSq += d*d; n++;
     if (Math.abs(d) > 50) nn50++;
   }
-  const rmssd = n > 0 ? Math.sqrt(sumSq/n) : 0;
-  const pnn50 = n > 0 ? 100*nn50/n : 0;
   return {
     beats_used: ibis.length,
-    mean_hr_bpm: 60000/meanI,
-    min_hr_bpm: 60000/Math.max(...ibis),
-    max_hr_bpm: 60000/Math.min(...ibis),
+    mean_hr_bpm: 60000/mean,
     sdnn_ms: sdnn,
-    rmssd_ms: rmssd,
-    pnn50_pct: pnn50,
+    rmssd_ms: n>0 ? Math.sqrt(sumSq/n) : 0,
+    pnn50_pct: n>0 ? 100*nn50/n : 0,
   };
 }
 
-// =============== BEAT STORE ===============
+// ================== BEAT STORE ==================
 class BeatStore {
-  constructor(tol = BEAT_DEDUP_SEC) { this.times = []; this.tol = tol; }
+  constructor(tol=BEAT_DEDUP_SEC) { this.times = []; this.tol = tol; }
   add(t) {
-    if (this.times.length === 0) { this.times.push(t); return true; }
-    let lo = 0, hi = this.times.length;
+    if (!this.times.length) { this.times.push(t); return; }
+    let lo=0, hi=this.times.length;
     while (lo < hi) { const m = (lo+hi)>>1; if (this.times[m] < t) lo = m+1; else hi = m; }
-    if (lo > 0 && (t - this.times[lo-1]) < this.tol) return false;
-    if (lo < this.times.length && (this.times[lo] - t) < this.tol) return false;
+    if (lo > 0 && (t - this.times[lo-1]) < this.tol) return;
+    if (lo < this.times.length && (this.times[lo] - t) < this.tol) return;
     this.times.splice(lo, 0, t);
-    return true;
   }
   clear() { this.times = []; }
 }
 
-// =============== ROI STATE ===============
-class RoiState {
-  constructor(name) {
-    this.name = name;
-    this.rgbBuf = [];     // live rolling {r,g,b,t}
-    this.fullRgb = [];    // full-session recording {r,g,b,t}
-    this.filtered = null;
-    this.snr = 0; this.snrGreen = 0; this.snrPos = 0;
-    this.algo = null;
+// ================== FINGER DETECTOR ==================
+class FingerDetector {
+  constructor() {
+    this.sinceLooksLike = null;
+    this.state = "no_finger";
   }
-  addSample(r, g, b, t) {
-    this.rgbBuf.push({r,g,b,t});
-    this.fullRgb.push({r,g,b,t});
+  frameCheck(r, g, std) {
+    if (r < FINGER_R_MIN) return { ok: false, reason: `too dark (R=${r.toFixed(0)}) - cover camera + flash` };
+    if (r > FINGER_R_MAX) return { ok: false, reason: `saturated (R=${r.toFixed(0)}) - no finger or too hard` };
+    const rg = r / (g + 1e-6);
+    if (rg < FINGER_RG_RATIO_MIN) return { ok: false, reason: `not red-dominant (R/G=${rg.toFixed(2)})` };
+    if (g > FINGER_G_MAX) return { ok: false, reason: `green too high (G=${g.toFixed(0)})` };
+    if (std > FINGER_STD_MAX) return { ok: false, reason: `scene detected (std=${std.toFixed(0)})` };
+    return { ok: true, reason: `R=${r.toFixed(0)} G=${g.toFixed(0)} R/G=${rg.toFixed(2)} std=${std.toFixed(0)}` };
   }
-  trim(bufSec) {
-    while (this.rgbBuf.length > 1 &&
-           (this.rgbBuf[this.rgbBuf.length-1].t - this.rgbBuf[0].t) > bufSec) {
-      this.rgbBuf.shift();
+  update(r, g, std, now, redSignal, fps) {
+    const fc = this.frameCheck(r, g, std);
+    if (!fc.ok) {
+      this.sinceLooksLike = null;
+      this.state = "no_finger";
+      return { state: this.state, reason: fc.reason };
     }
-  }
-  clear() {
-    this.rgbBuf = []; this.fullRgb = [];
-    this.filtered = null; this.snr = 0; this.algo = null;
-  }
-  process(fs) {
-    if (this.rgbBuf.length < fs * MIN_ANALYSIS_SEC) {
-      this.filtered = null; this.snr = 0; this.algo = null; return;
+    if (this.sinceLooksLike === null) {
+      this.sinceLooksLike = now;
+      this.state = "detecting";
+      return { state: this.state, reason: `finger-like (${fc.reason})` };
     }
-    let greenFilt = null, gSnr = 0;
-    try {
-      const gVals = new Float64Array(this.rgbBuf.length);
-      let gMean = 0;
-      for (let i = 0; i < this.rgbBuf.length; i++) gMean += this.rgbBuf[i].g;
-      gMean /= this.rgbBuf.length;
-      for (let i = 0; i < this.rgbBuf.length; i++) gVals[i] = this.rgbBuf[i].g - gMean;
-      const coef = designBandpass(fs, HR_LOW_HZ, HR_HIGH_HZ);
-      greenFilt = filtfilt(gVals, coef);
-      gSnr = roiSnr(greenFilt, fs);
-    } catch(e) {}
-    let posFilt = null, pSnr = 0;
-    try {
-      const pos = posAlgorithm(this.rgbBuf, fs);
-      const coef = designBandpass(fs, HR_LOW_HZ, HR_HIGH_HZ);
-      posFilt = filtfilt(pos, coef);
-      pSnr = roiSnr(posFilt, fs);
-    } catch(e) {}
-    this.snrGreen = gSnr; this.snrPos = pSnr;
-    if (greenFilt === null && posFilt === null) {
-      this.filtered = null; this.snr = 0; this.algo = null;
-    } else if (gSnr >= pSnr && greenFilt !== null) {
-      this.filtered = greenFilt; this.snr = gSnr; this.algo = "green";
-    } else {
-      this.filtered = posFilt; this.snr = pSnr; this.algo = "pos";
+    const held = now - this.sinceLooksLike;
+    if (held < FINGER_CONFIRM_SEC) {
+      this.state = "detecting";
+      return { state: this.state, reason: `holding... ${held.toFixed(1)}/${FINGER_CONFIRM_SEC}s` };
     }
+    if (redSignal.length >= fps * MIN_ANALYSIS_SEC) {
+      const sig = new Float64Array(redSignal.length);
+      let m = 0;
+      for (let i = 0; i < redSignal.length; i++) m += redSignal[i];
+      m /= redSignal.length;
+      for (let i = 0; i < redSignal.length; i++) sig[i] = redSignal[i] - m;
+      let filt;
+      try {
+        const coef = designBandpass(fps, HR_LOW_HZ, HR_HIGH_HZ);
+        filt = filtfilt(sig, coef);
+      } catch(e) { filt = sig; }
+      const snr = signalSnr(filt, fps);
+      if (snr >= FINGER_PULSE_SNR_MIN) {
+        this.state = "confirmed";
+        return { state: this.state, reason: `pulse detected (SNR=${snr.toFixed(3)})` };
+      } else {
+        this.state = "detecting";
+        return { state: this.state, reason: `waiting for pulse (SNR=${snr.toFixed(3)})` };
+      }
+    }
+    this.state = "detecting";
+    return { state: this.state, reason: `collecting pulse data... (${redSignal.length})` };
   }
-  // Run same analysis on FULL-SESSION recorded data (for final graph)
-  processFull(fs) {
-    if (this.fullRgb.length < fs * MIN_ANALYSIS_SEC) return null;
-    let greenFilt = null, gSnr = 0;
-    try {
-      const gVals = new Float64Array(this.fullRgb.length);
-      let gMean = 0;
-      for (let i = 0; i < this.fullRgb.length; i++) gMean += this.fullRgb[i].g;
-      gMean /= this.fullRgb.length;
-      for (let i = 0; i < this.fullRgb.length; i++) gVals[i] = this.fullRgb[i].g - gMean;
-      const coef = designBandpass(fs, HR_LOW_HZ, HR_HIGH_HZ);
-      greenFilt = filtfilt(gVals, coef);
-      gSnr = roiSnr(greenFilt, fs);
-    } catch(e) {}
-    let posFilt = null, pSnr = 0;
-    try {
-      const pos = posAlgorithm(this.fullRgb, fs);
-      const coef = designBandpass(fs, HR_LOW_HZ, HR_HIGH_HZ);
-      posFilt = filtfilt(pos, coef);
-      pSnr = roiSnr(posFilt, fs);
-    } catch(e) {}
-    let filtered = null, snr = 0, algo = null;
-    if (gSnr >= pSnr && greenFilt !== null) { filtered = greenFilt; snr = gSnr; algo = "green"; }
-    else if (posFilt !== null) { filtered = posFilt; snr = pSnr; algo = "pos"; }
-    return { filtered, snr, algo, snrGreen: gSnr, snrPos: pSnr,
-             times: this.fullRgb.map(s => s.t) };
-  }
-  getTimes() { return this.rgbBuf.map(s => s.t); }
+  clear() { this.sinceLooksLike = null; this.state = "no_finger"; }
 }
 
-// =============== MAIN STATE ===============
-let roiStates = {};
-for (const name of Object.keys(LANDMARKS)) roiStates[name] = new RoiState(name);
-let beats = new BeatStore();
+// ================== STATE ==================
 let running = false;
+let stream = null;
+let videoTrack = null;
+let hiddenCanvas = document.createElement('canvas');
+let hiddenCtx = hiddenCanvas.getContext('2d', { willReadFrequently: true });
+let fpsSamples = [];
 let measuredFps = 30;
-let fpsTimes = [];
-let currentWinner = null;
+let lastFrameT = null;
 let sessionStart = 0;
-let lastProcessTime = 0;
-let liveHrIbi = 0, liveHrFft = 0;
+let redBuf = [];
+let timeBuf = [];
+let fullRed = [];
+let fullTime = [];
+let beats = new BeatStore();
+let detector = new FingerDetector();
+let state = "no_finger";
+let liveHrIbi = 0, liveHrFft = 0, liveSnr = 0;
 let rmssdVal = 0, sdnnVal = 0;
-let lastSessionResults = null;   // stored for download
-
-// =============== TIMER ===============
+let lastProcessT = 0;
+let lastSessionResults = null;
 let timerInterval = null;
+
 function startTimer() {
   timerEl.classList.add('running');
   timerInterval = setInterval(() => {
-    const elapsed = Math.floor((performance.now()/1000) - sessionStart);
-    const mm = String(Math.floor(elapsed/60)).padStart(2, '0');
-    const ss = String(elapsed%60).padStart(2, '0');
+    const el = Math.floor((performance.now()/1000) - sessionStart);
+    const mm = String(Math.floor(el/60)).padStart(2,'0');
+    const ss = String(el%60).padStart(2,'0');
     timerEl.textContent = `${mm}:${ss}`;
   }, 250);
 }
 function stopTimer() {
   timerEl.classList.remove('running');
   if (timerInterval) clearInterval(timerInterval);
-  timerInterval = null;
 }
 function resetTimer() { timerEl.textContent = '00:00'; }
 
-// =============== CAMERA + FACEMESH ===============
-let faceMesh = null;
-let cameraStream = null;
-let processingFrame = false;
-
+// ================== CAMERA + FLASH ==================
 async function startCamera() {
   try {
+    // Prefer REAR camera (it has the flash on phones)
     const constraints = {
-      video: { facingMode: 'user',
-               width:{ideal:1280}, height:{ideal:720},
-               frameRate:{ideal:30} },
+      video: {
+        facingMode: { ideal: 'environment' },
+        width:  { ideal: 640 },
+        height: { ideal: 480 },
+        frameRate: { ideal: 30 }
+      },
       audio: false
     };
-    cameraStream = await navigator.mediaDevices.getUserMedia(constraints);
-    videoEl.srcObject = cameraStream;
+    stream = await navigator.mediaDevices.getUserMedia(constraints);
+    videoEl.srcObject = stream;
     await videoEl.play();
+    videoTrack = stream.getVideoTracks()[0];
+
+    // Attempt to turn on torch (Android Chrome supports this)
+    if (torchToggle.checked) {
+      await tryEnableTorch();
+    }
+
     log('Camera started', 'ok');
     return true;
   } catch(e) {
@@ -635,149 +570,181 @@ async function startCamera() {
     return false;
   }
 }
+
+async function tryEnableTorch() {
+  if (!videoTrack) return false;
+  try {
+    const capabilities = videoTrack.getCapabilities
+      ? videoTrack.getCapabilities()
+      : {};
+    if (capabilities.torch) {
+      await videoTrack.applyConstraints({ advanced: [{ torch: true }] });
+      log('Flashlight ON', 'ok');
+      return true;
+    } else {
+      log('Torch not supported on this device/browser. You need an external light source.', 'warn');
+      return false;
+    }
+  } catch(e) {
+    log('Could not enable torch: ' + e.message, 'warn');
+    return false;
+  }
+}
+async function tryDisableTorch() {
+  if (!videoTrack) return;
+  try {
+    const capabilities = videoTrack.getCapabilities ? videoTrack.getCapabilities() : {};
+    if (capabilities.torch) {
+      await videoTrack.applyConstraints({ advanced: [{ torch: false }] });
+    }
+  } catch(e) {}
+}
 function stopCamera() {
-  if (cameraStream) { cameraStream.getTracks().forEach(t => t.stop()); cameraStream = null; }
-}
-async function initFaceMesh() {
-  if (faceMesh) return;
-  statusEl.textContent = 'Loading FaceMesh...';
-  log('Loading FaceMesh...');
-  faceMesh = new FaceMesh({
-    locateFile: (f) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4.1633559619/${f}`
-  });
-  faceMesh.setOptions({
-    maxNumFaces: 1, refineLandmarks: false,
-    minDetectionConfidence: 0.5, minTrackingConfidence: 0.5,
-  });
-  faceMesh.onResults(onFaceResults);
-  await faceMesh.initialize();
-  log('FaceMesh ready', 'ok');
-  statusEl.textContent = 'Ready';
-}
-
-async function processVideoFrame() {
-  if (!running || processingFrame) {
-    if (running) requestAnimationFrame(processVideoFrame);
-    return;
+  if (stream) {
+    tryDisableTorch();
+    setTimeout(() => {
+      stream.getTracks().forEach(t => t.stop());
+      stream = null;
+      videoTrack = null;
+    }, 100);
   }
-  processingFrame = true;
-  try { await faceMesh.send({ image: videoEl }); }
-  catch(e) { log('FaceMesh send error: '+e.message, 'err'); }
-  processingFrame = false;
-  if (running) requestAnimationFrame(processVideoFrame);
 }
 
-function onFaceResults(results) {
+// ================== MAIN LOOP ==================
+function processFrame() {
+  if (!running) return;
   const now = performance.now() / 1000;
-  fpsTimes.push(now);
-  if (fpsTimes.length > 60) fpsTimes.shift();
-  if (fpsTimes.length > 10) {
-    measuredFps = (fpsTimes.length-1) / (fpsTimes[fpsTimes.length-1] - fpsTimes[0]);
-  }
-  const w = videoEl.videoWidth, h = videoEl.videoHeight;
-  overlayEl.width = w; overlayEl.height = h;
-  const ctx = overlayEl.getContext('2d');
-  ctx.clearRect(0, 0, w, h);
 
-  if (!results.multiFaceLandmarks || results.multiFaceLandmarks.length === 0) {
-    statusEl.textContent = `FPS ${measuredFps.toFixed(1)} • No face`;
-    return;
-  }
-  const lm = results.multiFaceLandmarks[0];
-
-  const hiddenCanvas = document.createElement('canvas');
-  hiddenCanvas.width = w; hiddenCanvas.height = h;
-  const hctx = hiddenCanvas.getContext('2d');
-  hctx.drawImage(videoEl, 0, 0, w, h);
-
-  const roiBoxes = {};
-  for (const [name, idxs] of Object.entries(LANDMARKS)) {
-    let xmin=1, ymin=1, xmax=0, ymax=0;
-    for (const i of idxs) {
-      if (lm[i].x < xmin) xmin = lm[i].x;
-      if (lm[i].y < ymin) ymin = lm[i].y;
-      if (lm[i].x > xmax) xmax = lm[i].x;
-      if (lm[i].y > ymax) ymax = lm[i].y;
+  // fps
+  if (lastFrameT !== null) {
+    const dt = now - lastFrameT;
+    if (dt > 0) {
+      fpsSamples.push(1/dt);
+      if (fpsSamples.length > 60) fpsSamples.shift();
+      // median
+      const sorted = fpsSamples.slice().sort((a,b)=>a-b);
+      measuredFps = sorted[Math.floor(sorted.length/2)];
     }
-    const bw = xmax-xmin, bh = ymax-ymin;
-    xmin += bw*0.12; xmax -= bw*0.12;
-    ymin += bh*0.12; ymax -= bh*0.12;
-    const x = Math.max(0, Math.floor(xmin*w));
-    const y = Math.max(0, Math.floor(ymin*h));
-    const bw2 = Math.max(4, Math.floor((xmax-xmin)*w));
-    const bh2 = Math.max(4, Math.floor((ymax-ymin)*h));
-    roiBoxes[name] = {x, y, w: bw2, h: bh2};
   }
-  for (const [name, box] of Object.entries(roiBoxes)) {
-    if (box.w < 4 || box.h < 4) continue;
-    const img = hctx.getImageData(box.x, box.y, box.w, box.h).data;
-    let rSum=0, gSum=0, bSum=0;
-    const count = img.length/4;
-    for (let i = 0; i < img.length; i += 4) {
-      rSum += img[i]; gSum += img[i+1]; bSum += img[i+2];
-    }
-    roiStates[name].addSample(rSum/count, gSum/count, bSum/count, now);
-    roiStates[name].trim(BUFFER_SEC);
+  lastFrameT = now;
+
+  // Sample central patch of the video (60% wide x 60% tall centered)
+  if (!videoEl.videoWidth || !videoEl.videoHeight) {
+    requestAnimationFrame(processFrame); return;
+  }
+  const vw = videoEl.videoWidth, vh = videoEl.videoHeight;
+  const cw = Math.floor(vw * 0.6), ch = Math.floor(vh * 0.6);
+  const cx = Math.floor((vw - cw)/2), cy = Math.floor((vh - ch)/2);
+  if (hiddenCanvas.width !== cw || hiddenCanvas.height !== ch) {
+    hiddenCanvas.width = cw; hiddenCanvas.height = ch;
+  }
+  hiddenCtx.drawImage(videoEl, cx, cy, cw, ch, 0, 0, cw, ch);
+  const imgData = hiddenCtx.getImageData(0, 0, cw, ch).data;
+
+  // Mean R, G, B; std of grayscale
+  let rSum=0, gSum=0, bSum=0, graySum=0, graySqSum=0;
+  const px = imgData.length/4;
+  for (let i = 0; i < imgData.length; i += 4) {
+    const r = imgData[i], g = imgData[i+1], b = imgData[i+2];
+    rSum += r; gSum += g; bSum += b;
+    const gray = 0.299*r + 0.587*g + 0.114*b;
+    graySum += gray;
+    graySqSum += gray*gray;
+  }
+  const rMean = rSum/px, gMean = gSum/px, bMean = bSum/px;
+  const grayMean = graySum/px;
+  const grayVar = graySqSum/px - grayMean*grayMean;
+  const grayStd = Math.sqrt(Math.max(0, grayVar));
+
+  // Add to red buffer
+  redBuf.push(rMean);
+  timeBuf.push(now);
+  while (timeBuf.length > 1 && (timeBuf[timeBuf.length-1] - timeBuf[0]) > BUFFER_SEC) {
+    redBuf.shift(); timeBuf.shift();
   }
 
-  if (now - lastProcessTime > 0.5 && measuredFps > 5) {
-    lastProcessTime = now;
-    for (const r of Object.values(roiStates)) r.process(measuredFps);
+  // Finger check
+  const res = detector.update(rMean, gMean, grayStd, now, redBuf, measuredFps);
+  state = res.state;
+  // Update banner
+  bannerEl.className = 'banner ' + state;
+  const msgs = { no_finger: 'PLACE FINGER ON CAMERA', detecting: 'DETECTING FINGER...', confirmed: 'MEASURING HEART RATE' };
+  bannerEl.textContent = msgs[state];
+  reasonEl.textContent = res.reason;
+  fpsBadge.textContent = `FPS ${measuredFps.toFixed(1)}`;
 
-    let best = null;
-    for (const r of Object.values(roiStates)) {
-      if (r.snr >= MIN_ROI_QUALITY && (!best || r.snr > best.snr)) best = r;
-    }
-    currentWinner = best ? best.name : null;
+  // When confirmed, record and analyze
+  if (state === 'confirmed') {
+    fullRed.push(rMean);
+    fullTime.push(now);
 
-    if (best && best.filtered) {
-      const sig = best.filtered, times = best.getTimes();
-      let mean = 0;
-      for (let i = 0; i < sig.length; i++) mean += sig[i];
-      mean /= sig.length;
-      let varS = 0;
-      for (let i = 0; i < sig.length; i++) varS += (sig[i]-mean)*(sig[i]-mean);
-      const std = Math.sqrt(varS/sig.length) + 1e-9;
-      const norm = new Float64Array(sig.length);
-      for (let i = 0; i < sig.length; i++) norm[i] = sig[i]/std;
-      const minDist = Math.max(1, Math.floor(PEAK_MIN_DIST_SEC * measuredFps));
-      const peakIdxs = findPeaks(norm, minDist, PEAK_MIN_PROMINENCE);
-      const stableCutoff = now - BEAT_STABLE_DELAY;
-      for (const idx of peakIdxs) {
-        const tp = times[idx];
-        if (tp > stableCutoff) continue;
-        beats.add(tp);
+    if ((now - lastProcessT) > 0.5 && redBuf.length >= MIN_ANALYSIS_SEC * measuredFps) {
+      lastProcessT = now;
+      const sig = new Float64Array(redBuf.length);
+      let m = 0;
+      for (let i = 0; i < redBuf.length; i++) m += redBuf[i];
+      m /= redBuf.length;
+      for (let i = 0; i < redBuf.length; i++) sig[i] = redBuf[i] - m;
+      let filt;
+      try {
+        const coef = designBandpass(measuredFps, HR_LOW_HZ, HR_HIGH_HZ);
+        filt = filtfilt(sig, coef);
+      } catch(e) { filt = sig; }
+
+      liveSnr = signalSnr(filt, measuredFps);
+
+      // FFT HR
+      const winN = Math.floor(HR_WIN_SEC * measuredFps);
+      const winSig = filt.length > winN ? filt.slice(filt.length - winN) : filt;
+      const { hr, confidence } = estimateHrFft(winSig, measuredFps);
+      if (confidence > 0.15 && hr >= 40 && hr <= 180) liveHrFft = hr;
+
+      // Beats
+      if (filt.length > 10) {
+        let meanS = 0;
+        for (let i = 0; i < filt.length; i++) meanS += filt[i];
+        meanS /= filt.length;
+        let vr = 0;
+        for (let i = 0; i < filt.length; i++) vr += (filt[i]-meanS)*(filt[i]-meanS);
+        const std = Math.sqrt(vr/filt.length) + 1e-9;
+        const norm = new Float64Array(filt.length);
+        for (let i = 0; i < filt.length; i++) norm[i] = filt[i]/std;
+        const minDist = Math.max(1, Math.floor(PEAK_MIN_DIST_SEC * measuredFps));
+        const peakIdxs = findPeaks(norm, minDist, PEAK_MIN_PROMINENCE);
+        const stableCutoff = now - 0.5;
+        for (const idx of peakIdxs) {
+          const tp = timeBuf[idx];
+          if (tp > stableCutoff) continue;
+          beats.add(tp);
+        }
       }
 
-      const winN = Math.floor(WINDOW_SEC * measuredFps);
-      const winSig = sig.length > winN ? sig.slice(sig.length-winN) : sig;
-      const fftRes = estimateHrFft(winSig, measuredFps);
-      if (fftRes.confidence > 0.1 && fftRes.hr > 40 && fftRes.hr < 180) {
-        liveHrFft = fftRes.hr;
-      }
-      const winStart = now - WINDOW_SEC;
+      // IBI HR
+      const winStart = now - HR_WIN_SEC;
       const recent = beats.times.filter(t => t >= winStart && t <= now);
       if (recent.length >= 3) {
         const ibis = [];
         for (let i = 1; i < recent.length; i++) {
-          const d = recent[i]-recent[i-1];
+          const d = recent[i] - recent[i-1];
           if (d > 0.3 && d < 1.5) ibis.push(d);
         }
         if (ibis.length >= 2) {
           liveHrIbi = 60 / (ibis.reduce((a,b)=>a+b)/ibis.length);
         }
       }
+
+      // HRV
       if (beats.times.length >= 10) {
         const allIbis = [];
         for (let i = 1; i < beats.times.length; i++) {
-          const d = (beats.times[i]-beats.times[i-1])*1000;
+          const d = (beats.times[i] - beats.times[i-1]) * 1000;
           if (d > 300 && d < 1500) allIbis.push(d);
         }
         if (allIbis.length >= 3) {
-          const meanI = allIbis.reduce((a,b)=>a+b)/allIbis.length;
-          let varI = 0;
-          for (const v of allIbis) varI += (v-meanI)*(v-meanI);
-          sdnnVal = Math.sqrt(varI/allIbis.length);
+          const mean = allIbis.reduce((a,b)=>a+b)/allIbis.length;
+          let vr = 0;
+          for (const v of allIbis) vr += (v-mean)*(v-mean);
+          sdnnVal = Math.sqrt(vr/allIbis.length);
           let sumSq=0, n=0;
           for (let i = 1; i < allIbis.length; i++) {
             const d = allIbis[i]-allIbis[i-1];
@@ -786,78 +753,57 @@ function onFaceResults(results) {
           if (n > 0) rmssdVal = Math.sqrt(sumSq/n);
         }
       }
+
+      drawWaveform(filt);
     }
-    updateDisplay();
-    drawWaveform();
   }
 
-  for (const [name, box] of Object.entries(roiBoxes)) {
-    const isWinner = name === currentWinner;
-    ctx.strokeStyle = isWinner ? '#4ade80' : 'rgba(255,255,255,0.4)';
-    ctx.lineWidth = isWinner ? 3 : 1;
-    ctx.strokeRect(box.x, box.y, box.w, box.h);
-    ctx.fillStyle = isWinner ? '#4ade80' : 'rgba(255,255,255,0.6)';
-    ctx.font = '12px sans-serif';
-    ctx.fillText(name + (isWinner ? ' ★' : ''), box.x, box.y - 4);
-  }
-
-  statusEl.textContent = `FPS ${measuredFps.toFixed(1)} • Beats: ${beats.times.length} • ` +
-    (currentWinner ? `Using: ${currentWinner}` : 'Finding signal...');
+  updateDisplay();
+  requestAnimationFrame(processFrame);
 }
 
-// =============== LIVE DISPLAY ===============
 function updateDisplay() {
   hrIbiEl.textContent = liveHrIbi > 0 ? liveHrIbi.toFixed(0) : '--';
   hrFftEl.textContent = liveHrFft > 0 ? liveHrFft.toFixed(0) : '--';
   rmssdEl.textContent = rmssdVal > 0 ? rmssdVal.toFixed(0) : '--';
   sdnnEl.textContent = sdnnVal > 0 ? sdnnVal.toFixed(0) : '--';
-  if (liveHrIbi > 0 && liveHrFft > 0) {
-    const diff = Math.abs(liveHrIbi - liveHrFft);
-    if (diff < 5) { agreeEl.textContent='Good ✓'; agreeEl.style.color='var(--good)';
-      agreeSub.textContent = `within ${diff.toFixed(1)} bpm — trustworthy`; }
-    else if (diff < 15) { agreeEl.textContent='Marginal'; agreeEl.style.color='var(--mid)';
-      agreeSub.textContent = `${diff.toFixed(1)} bpm apart — uncertain`; }
-    else { agreeEl.textContent='Poor ✗'; agreeEl.style.color='var(--bad)';
-      agreeSub.textContent = `${diff.toFixed(1)} bpm apart — don't trust`; }
-  } else { agreeEl.textContent='--'; agreeEl.style.color='var(--muted)';
-    agreeSub.textContent='need both estimates'; }
-
-  qualList.innerHTML = '';
-  const sorted = Object.entries(roiStates).sort((a,b) => b[1].snr - a[1].snr);
-  for (const [name, r] of sorted) {
-    const row = document.createElement('div');
-    row.className = 'quality-row';
-    if (name === currentWinner) row.classList.add('best');
-    row.innerHTML = `<span class="name">${name}${r.algo ? ' ['+r.algo+']' : ''}</span>` +
-                    `<span class="val">q=${r.snr.toFixed(3)}</span>`;
-    qualList.appendChild(row);
+  if (liveSnr > 0) {
+    snrValEl.textContent = liveSnr.toFixed(3);
+    if (liveSnr > 0.2) { snrValEl.style.color = 'var(--good)'; snrSubEl.textContent = 'Strong signal'; }
+    else if (liveSnr > 0.08) { snrValEl.style.color = 'var(--mid)'; snrSubEl.textContent = 'Moderate signal'; }
+    else { snrValEl.style.color = 'var(--bad)'; snrSubEl.textContent = 'Weak signal'; }
   }
 }
-function drawWaveform() {
+
+function drawWaveform(filtered) {
   const ctx = waveCtx;
   const W = waveCanvas.clientWidth, H = waveCanvas.clientHeight;
-  if (waveCanvas.width !== W || waveCanvas.height !== H) { waveCanvas.width = W; waveCanvas.height = H; }
-  ctx.clearRect(0,0,W,H); ctx.fillStyle = '#11131a'; ctx.fillRect(0,0,W,H);
-  ctx.strokeStyle = '#2a2f3d'; ctx.beginPath(); ctx.moveTo(0,H/2); ctx.lineTo(W,H/2); ctx.stroke();
-  if (!currentWinner) return;
-  const winner = roiStates[currentWinner];
-  if (!winner.filtered) return;
-  const sig = winner.filtered, times = winner.getTimes();
-  const n = Math.floor(Math.min(sig.length, 8 * measuredFps));
-  const seg = sig.slice(sig.length-n), tSeg = times.slice(times.length-n);
+  if (waveCanvas.width !== W || waveCanvas.height !== H) {
+    waveCanvas.width = W; waveCanvas.height = H;
+  }
+  ctx.clearRect(0,0,W,H);
+  ctx.fillStyle = '#0f1117'; ctx.fillRect(0,0,W,H);
+  ctx.strokeStyle = '#2a2f3d';
+  ctx.beginPath(); ctx.moveTo(0,H/2); ctx.lineTo(W,H/2); ctx.stroke();
+
+  if (!filtered || filtered.length < 10) return;
+  const dispN = Math.min(filtered.length, Math.floor(6 * measuredFps));
+  const seg = filtered.slice(filtered.length - dispN);
   let mean = 0;
   for (let i = 0; i < seg.length; i++) mean += seg[i];
   mean /= seg.length;
-  let variance = 0;
-  for (let i = 0; i < seg.length; i++) variance += (seg[i]-mean)*(seg[i]-mean);
-  const std = Math.sqrt(variance/seg.length) + 1e-9;
+  let vr = 0;
+  for (let i = 0; i < seg.length; i++) vr += (seg[i]-mean)*(seg[i]-mean);
+  const std = Math.sqrt(vr/seg.length) + 1e-9;
   let maxAbs = 0;
   for (let i = 0; i < seg.length; i++) {
     const v = (seg[i]-mean)/std;
     if (Math.abs(v) > maxAbs) maxAbs = Math.abs(v);
   }
   if (maxAbs < 0.1) maxAbs = 1;
-  ctx.strokeStyle = '#60a5fa'; ctx.lineWidth = 1.5;
+
+  ctx.strokeStyle = '#c0392b';
+  ctx.lineWidth = 1.5;
   ctx.beginPath();
   for (let i = 0; i < seg.length; i++) {
     const v = (seg[i]-mean)/std;
@@ -866,473 +812,347 @@ function drawWaveform() {
     if (i === 0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
   }
   ctx.stroke();
-  if (tSeg.length === 0) return;
-  const t0 = tSeg[0], t1 = tSeg[tSeg.length-1];
-  ctx.fillStyle = '#4ade80';
-  const recentBeats = beats.times.filter(t => t >= t0 && t <= t1);
-  for (const tb of recentBeats) {
-    const x = ((tb - t0) / (t1 - t0 + 1e-9)) * W;
-    ctx.beginPath(); ctx.arc(x, H/2, 4, 0, 2*Math.PI); ctx.fill();
+
+  // Beat dots
+  if (timeBuf.length >= dispN) {
+    const tStart = timeBuf[timeBuf.length - dispN];
+    const tEnd = timeBuf[timeBuf.length - 1];
+    ctx.fillStyle = '#4ade80';
+    for (const tb of beats.times) {
+      if (tb >= tStart && tb <= tEnd) {
+        const rel = (tb - tStart)/(tEnd - tStart + 1e-9);
+        const x = rel*W;
+        ctx.beginPath(); ctx.arc(x, H/2, 4, 0, 2*Math.PI); ctx.fill();
+      }
+    }
   }
 }
 
-// =============== OFFLINE ANALYSIS + RESULTS RENDERING ===============
+// ================== OFFLINE ANALYSIS ==================
 function runOfflineAnalysis() {
-  // Re-process each ROI on its full-session data
-  const perRoi = {};
-  for (const [name, r] of Object.entries(roiStates)) {
-    const result = r.processFull(measuredFps);
-    if (result && result.filtered !== null) perRoi[name] = result;
+  const duration = (performance.now()/1000) - sessionStart;
+  if (fullRed.length < measuredFps * MIN_ANALYSIS_SEC) {
+    return { empty: true, duration };
   }
-  let bestName = null, best = null;
-  for (const [name, d] of Object.entries(perRoi)) {
-    if (!best || d.snr > best.snr) { best = d; bestName = name; }
-  }
-  // Re-detect beats from best ROI's full signal
+  const g = new Float64Array(fullRed.length);
+  let mean = 0;
+  for (let i = 0; i < fullRed.length; i++) mean += fullRed[i];
+  mean /= fullRed.length;
+  for (let i = 0; i < fullRed.length; i++) g[i] = fullRed[i] - mean;
+  let filtered;
+  try {
+    const coef = designBandpass(measuredFps, HR_LOW_HZ, HR_HIGH_HZ);
+    filtered = filtfilt(g, coef);
+  } catch(e) { filtered = g; }
+
+  // Re-detect beats offline
+  const warmupN = Math.floor(2.0 * measuredFps);
   let beatTimes = [];
-  if (best) {
-    const warmupN = Math.floor(FILTER_WARMUP_SEC * measuredFps);
-    const sigAll = best.filtered;
-    const tAll = best.times;
-    if (sigAll.length > warmupN + 20) {
-      const sig = sigAll.slice(warmupN);
-      const t = tAll.slice(warmupN);
-      let mean = 0;
-      for (let i = 0; i < sig.length; i++) mean += sig[i];
-      mean /= sig.length;
-      let variance = 0;
-      for (let i = 0; i < sig.length; i++) variance += (sig[i]-mean)*(sig[i]-mean);
-      const std = Math.sqrt(variance/sig.length) + 1e-9;
-      const norm = new Float64Array(sig.length);
-      for (let i = 0; i < sig.length; i++) norm[i] = sig[i]/std;
-      const minDist = Math.max(1, Math.floor(PEAK_MIN_DIST_SEC * measuredFps));
-      const peaks = findPeaks(norm, minDist, PEAK_MIN_PROMINENCE);
-      for (const idx of peaks) beatTimes.push(t[idx]);
-    }
+  if (filtered.length > warmupN + 20) {
+    const sig = filtered.slice(warmupN);
+    const times = fullTime.slice(warmupN);
+    let m = 0;
+    for (let i = 0; i < sig.length; i++) m += sig[i];
+    m /= sig.length;
+    let vr = 0;
+    for (let i = 0; i < sig.length; i++) vr += (sig[i]-m)*(sig[i]-m);
+    const std = Math.sqrt(vr/sig.length) + 1e-9;
+    const norm = new Float64Array(sig.length);
+    for (let i = 0; i < sig.length; i++) norm[i] = sig[i]/std;
+    const minDist = Math.max(1, Math.floor(PEAK_MIN_DIST_SEC * measuredFps));
+    const peaks = findPeaks(norm, minDist, PEAK_MIN_PROMINENCE);
+    for (const p of peaks) beatTimes.push(times[p]);
   }
   beatTimes.sort((a,b)=>a-b);
+
   const rawIbisMs = [];
-  for (let i = 1; i < beatTimes.length; i++) rawIbisMs.push((beatTimes[i]-beatTimes[i-1])*1000);
+  for (let i = 1; i < beatTimes.length; i++) {
+    rawIbisMs.push((beatTimes[i] - beatTimes[i-1])*1000);
+  }
   const hrv = rawIbisMs.length > 2 ? computeHrv(rawIbisMs) : null;
 
   // HR timelines
-  const duration = (performance.now()/1000) - sessionStart;
-  const t0 = best ? best.times[0] : sessionStart;
-  const hrTimelineIbi = [], hrTimelineFft = [];
-  if (best) {
-    const stepSec = 2.0, winSec = WINDOW_SEC, half = winSec/2.0;
-    let tc = half;
-    while (tc <= duration) {
-      const wStart = (tc - half) + t0;
-      const wEnd   = (tc + half) + t0;
-      // IBI-based
-      const inWin = beatTimes.filter(t => t >= wStart && t <= wEnd);
-      if (inWin.length >= 3) {
-        const ibis = [];
-        for (let i = 1; i < inWin.length; i++) {
-          const d = inWin[i]-inWin[i-1];
-          if (d > 0.3 && d < 1.5) ibis.push(d);
-        }
-        if (ibis.length >= 2) {
-          const mean = ibis.reduce((a,b)=>a+b)/ibis.length;
-          hrTimelineIbi.push([tc, 60/mean]);
-        } else hrTimelineIbi.push([tc, NaN]);
-      } else hrTimelineIbi.push([tc, NaN]);
-      // FFT-based
-      const sigMask = best.times.map((t, i) => (t >= wStart && t <= wEnd) ? i : -1).filter(i => i >= 0);
-      if (sigMask.length >= Math.floor(measuredFps*3)) {
-        const seg = sigMask.map(i => best.filtered[i]);
-        const { hr, confidence } = estimateHrFft(seg, measuredFps);
-        if (confidence > 0.1 && hr >= HR_LOW_HZ*60 && hr <= HR_HIGH_HZ*60) {
-          hrTimelineFft.push([tc, hr]);
-        } else hrTimelineFft.push([tc, NaN]);
-      } else hrTimelineFft.push([tc, NaN]);
-      tc += stepSec;
+  const hrIbi = [], hrFft = [];
+  const t0 = fullTime[0];
+  const stepSec = 2.0, winSec = HR_WIN_SEC, half = winSec/2.0;
+  let tc = half;
+  const sessionDur = fullTime[fullTime.length-1] - t0;
+  while (tc <= sessionDur) {
+    const wStart = (tc - half) + t0;
+    const wEnd = (tc + half) + t0;
+
+    // IBI
+    const inWin = beatTimes.filter(t => t >= wStart && t <= wEnd);
+    if (inWin.length >= 3) {
+      const ibs = [];
+      for (let i = 1; i < inWin.length; i++) {
+        const d = inWin[i]-inWin[i-1];
+        if (d > 0.3 && d < 1.5) ibs.push(d);
+      }
+      if (ibs.length >= 2) {
+        const mn = ibs.reduce((a,b)=>a+b)/ibs.length;
+        hrIbi.push([tc, 60/mn]);
+      }
     }
+
+    // FFT
+    const mask = fullTime.map((t,i) => (t >= wStart && t <= wEnd) ? i : -1).filter(i => i >= 0);
+    if (mask.length >= measuredFps*3) {
+      const seg = mask.map(i => filtered[i]);
+      const { hr, confidence } = estimateHrFft(seg, measuredFps);
+      if (confidence > 0.1 && hr >= 40 && hr <= 180) hrFft.push([tc, hr]);
+    }
+    tc += stepSec;
   }
-  // Medians
-  const valsIbi = hrTimelineIbi.map(p=>p[1]).filter(v=>!isNaN(v));
-  const valsFft = hrTimelineFft.map(p=>p[1]).filter(v=>!isNaN(v));
-  const medIbi = valsIbi.length ? median(valsIbi) : null;
-  const medFft = valsFft.length ? median(valsFft) : null;
+
+  const median = arr => {
+    if (!arr.length) return null;
+    const s = arr.slice().sort((a,b)=>a-b);
+    return s.length % 2 ? s[(s.length-1)/2] : (s[s.length/2-1]+s[s.length/2])/2;
+  };
+  const medIbi = median(hrIbi.map(x=>x[1]));
+  const medFft = median(hrFft.map(x=>x[1]));
+
   return {
-    duration, fps: measuredFps, perRoi, bestName, best,
-    beatTimes, rawIbisMs, hrv,
-    hrTimelineIbi, hrTimelineFft,
-    medIbi, medFft, t0
+    empty: false, duration, fps: measuredFps,
+    filtered, fullTime, t0, sessionDur,
+    beatTimes, rawIbisMs, hrv, hrIbi, hrFft, medIbi, medFft,
   };
 }
-function median(arr) {
-  const s = arr.slice().sort((a,b)=>a-b);
-  return s.length % 2 ? s[(s.length-1)/2] : (s[s.length/2-1]+s[s.length/2])/2;
-}
 
-function renderResults(res) {
-  // Verdict
-  const verdictEl = document.getElementById('verdict');
-  verdictEl.className = 'verdict';
-  if (res.medIbi !== null && res.medFft !== null) {
-    const diff = Math.abs(res.medIbi - res.medFft);
-    if (diff < 5) {
-      verdictEl.classList.add('trust');
-      verdictEl.innerHTML = `<strong>Trustworthy</strong><br>IBI and FFT agree within ${diff.toFixed(1)} bpm. ` +
-                            `Median HR ≈ ${((res.medIbi+res.medFft)/2).toFixed(1)} bpm.`;
-    } else if (diff < 15) {
-      verdictEl.classList.add('marginal');
-      verdictEl.innerHTML = `<strong>Marginal</strong><br>IBI=${res.medIbi.toFixed(1)}, FFT=${res.medFft.toFixed(1)} bpm. ` +
-                            `Disagree by ${diff.toFixed(1)} bpm — interpret with caution.`;
-    } else {
-      verdictEl.classList.add('bad');
-      verdictEl.innerHTML = `<strong>Untrustworthy</strong><br>IBI=${res.medIbi.toFixed(1)}, FFT=${res.medFft.toFixed(1)} bpm. ` +
-                            `Disagree by ${diff.toFixed(1)} bpm — signal was too noisy.`;
-    }
-  } else {
-    verdictEl.classList.add('bad');
-    verdictEl.innerHTML = `<strong>No signal detected</strong><br>Not enough clean data to estimate HR.`;
-  }
-
-  // Summary grid
-  const grid = document.getElementById('summaryGrid');
-  grid.innerHTML = '';
-  const addMetric = (label, value, sub='') => {
-    const d = document.createElement('div');
-    d.className = 'metric';
-    d.innerHTML = `<div class="label">${label}</div><div class="value">${value}</div>` +
-                  (sub ? `<div class="sub">${sub}</div>` : '');
-    grid.appendChild(d);
-  };
-  const dd = Math.floor(res.duration);
-  const mm = String(Math.floor(dd/60)).padStart(2,'0');
-  const ss = String(dd%60).padStart(2,'0');
-  addMetric('Duration', `${mm}:${ss}`);
-  addMetric('Avg FPS', res.fps.toFixed(1));
-  addMetric('Best ROI', res.bestName || '--', res.best ? `[${res.best.algo}]` : '');
-  addMetric('Total beats', res.beatTimes.length);
-  addMetric('HR (IBI median)', res.medIbi !== null ? res.medIbi.toFixed(1) + ' bpm' : '--');
-  addMetric('HR (FFT median)', res.medFft !== null ? res.medFft.toFixed(1) + ' bpm' : '--');
-  if (res.hrv) {
-    addMetric('RMSSD', res.hrv.rmssd_ms.toFixed(1) + ' ms');
-    addMetric('SDNN', res.hrv.sdnn_ms.toFixed(1) + ' ms');
-    addMetric('pNN50', res.hrv.pnn50_pct.toFixed(1) + '%');
-    addMetric('Mean HR from beats', res.hrv.mean_hr_bpm.toFixed(1) + ' bpm');
-  }
-
-  // Panel 1: best ROI signal + beats
-  drawBestRoiChart('chart1', res);
-  document.getElementById('caption1').textContent =
-    `Pulse waveform from ${res.bestName} with ${res.beatTimes.length} detected beats (green dots)`;
-
-  // Panel 2: per-ROI overlap
-  drawPerRoiChart('chart2', res);
-  document.getElementById('caption2').textContent =
-    `All ROIs overlaid. The ${res.bestName} signal is drawn thick and opaque; others are dimmed.`;
-
-  // Panel 3: HR timeline
-  drawHrChart('chart3', res);
-  document.getElementById('caption3').textContent =
-    `IBI-based HR (blue) vs FFT-based HR (orange). Agreement = trustworthy measurement.`;
-
-  // Panel 4: IBI
-  drawIbiChart('chart4', res);
-  document.getElementById('caption4').textContent =
-    `Inter-beat intervals in ms. A stable resting heart shows values tightly clustered around the mean.`;
-
-  // Quality list
-  const qEl = document.getElementById('resultsQuality');
-  qEl.innerHTML = '';
-  const entries = Object.entries(res.perRoi).sort((a,b) => b[1].snr - a[1].snr);
-  for (const [name, d] of entries) {
-    const row = document.createElement('div');
-    row.className = 'quality-row';
-    if (name === res.bestName) row.classList.add('best');
-    row.innerHTML = `<span class="name">${name} [${d.algo}]</span>` +
-      `<span class="val">SNR=${d.snr.toFixed(3)} (green=${d.snrGreen.toFixed(3)}, pos=${d.snrPos.toFixed(3)})</span>`;
-    qEl.appendChild(row);
-  }
-}
-
-// ---- Canvas drawing helpers ----
-function setupCanvas(canvas) {
+// ================== RESULTS RENDERING ==================
+function setupCanvas(canvas, heightPx) {
   const dpr = window.devicePixelRatio || 1;
   const rect = canvas.getBoundingClientRect();
   canvas.width = rect.width * dpr;
-  canvas.height = canvas.height * dpr;
+  canvas.height = heightPx * dpr;
   const ctx = canvas.getContext('2d');
   ctx.scale(dpr, dpr);
-  return { ctx, W: rect.width, H: canvas.height/dpr };
+  return { ctx, W: rect.width, H: heightPx };
 }
 function drawAxes(ctx, W, H, xMin, xMax, yMin, yMax, opts={}) {
-  const pad = { l: 48, r: 10, t: 10, b: 24 };
-  ctx.fillStyle = '#0f1117';
-  ctx.fillRect(0, 0, W, H);
-  ctx.strokeStyle = '#2a2f3d';
-  ctx.lineWidth = 1;
+  const pad = { l: 46, r: 10, t: 10, b: 24 };
+  ctx.fillStyle = '#0f1117'; ctx.fillRect(0, 0, W, H);
+  ctx.strokeStyle = '#2a2f3d'; ctx.lineWidth = 1;
   ctx.strokeRect(pad.l, pad.t, W-pad.l-pad.r, H-pad.t-pad.b);
-  // Grid
   ctx.strokeStyle = '#1a1d26';
   ctx.fillStyle = '#8892a6';
   ctx.font = '10px sans-serif';
   const plotW = W-pad.l-pad.r, plotH = H-pad.t-pad.b;
-  // Y ticks
   const yTicks = 4;
   for (let i = 0; i <= yTicks; i++) {
     const yVal = yMin + (yMax-yMin)*(i/yTicks);
-    const y = pad.t + plotH - (plotH*(i/yTicks));
+    const y = pad.t + plotH - plotH*(i/yTicks);
     ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(W-pad.r, y); ctx.stroke();
-    ctx.fillText(yVal.toFixed(opts.yDecimals !== undefined ? opts.yDecimals : 0), 4, y+3);
+    ctx.fillText(yVal.toFixed(opts.yDecimals ?? 0), 4, y+3);
   }
-  // X ticks
   const xTicks = 6;
   for (let i = 0; i <= xTicks; i++) {
     const xVal = xMin + (xMax-xMin)*(i/xTicks);
     const x = pad.l + plotW*(i/xTicks);
-    ctx.fillText(xVal.toFixed(0) + 's', x-6, H-8);
+    ctx.fillText(xVal.toFixed(0)+'s', x-6, H-8);
   }
-  // X axis label + Y axis label
   if (opts.yLabel) {
-    ctx.save();
-    ctx.translate(14, pad.t + plotH/2);
-    ctx.rotate(-Math.PI/2);
-    ctx.fillStyle = '#8892a6';
-    ctx.textAlign = 'center';
-    ctx.fillText(opts.yLabel, 0, 0);
-    ctx.restore();
+    ctx.save(); ctx.translate(14, pad.t + plotH/2); ctx.rotate(-Math.PI/2);
+    ctx.textAlign = 'center'; ctx.fillText(opts.yLabel, 0, 0); ctx.restore();
   }
   return { pad, plotW, plotH };
 }
-function scaleX(t, tMin, tMax, pad, plotW) { return pad.l + ((t-tMin)/(tMax-tMin + 1e-9))*plotW; }
-function scaleY(v, yMin, yMax, pad, plotH) { return pad.t + plotH - ((v-yMin)/(yMax-yMin + 1e-9))*plotH; }
+function sx(t, tMin, tMax, pad, plotW) { return pad.l + ((t-tMin)/(tMax-tMin+1e-9))*plotW; }
+function sy(v, yMin, yMax, pad, plotH) { return pad.t + plotH - ((v-yMin)/(yMax-yMin+1e-9))*plotH; }
 
-function drawBestRoiChart(canvasId, res) {
-  const canvas = document.getElementById(canvasId);
-  canvas.height = 260;
-  const { ctx, W, H } = setupCanvas(canvas);
-  const duration = res.duration;
-  if (!res.best) { ctx.fillStyle='#8892a6'; ctx.fillText('No data', W/2-20, H/2); return; }
-
-  const sig = res.best.filtered;
-  const times = res.best.times;
-  const warmupN = Math.floor(FILTER_WARMUP_SEC * res.fps);
-  const t0 = res.t0;
-
-  // Normalize
-  const tail = sig.slice(warmupN);
-  const meanS = tail.reduce((a,b)=>a+b,0)/tail.length;
-  let vr = 0;
-  for (const v of tail) vr += (v-meanS)*(v-meanS);
-  const stdS = Math.sqrt(vr/tail.length) + 1e-9;
-
-  const yMin = -5, yMax = 5;
-  const { pad, plotW, plotH } = drawAxes(ctx, W, H, 0, duration, yMin, yMax, {yLabel:'pulse (norm)', yDecimals:0});
-
-  ctx.beginPath();
-  ctx.strokeStyle = '#c0392b';
-  ctx.lineWidth = 1;
-  let started = false;
-  for (let i = warmupN; i < sig.length; i++) {
-    const tRel = times[i] - t0;
-    const v = (sig[i] - meanS)/stdS;
-    const x = scaleX(tRel, 0, duration, pad, plotW);
-    const y = scaleY(v, yMin, yMax, pad, plotH);
-    if (!started) { ctx.moveTo(x,y); started = true; } else ctx.lineTo(x,y);
-  }
-  ctx.stroke();
-
-  // Beat dots
-  ctx.fillStyle = '#4ade80';
-  for (const t of res.beatTimes) {
-    const tRel = t - t0;
-    // find nearest sig index
-    let lo=0, hi=times.length-1;
-    while (lo < hi) {
-      const m = (lo+hi)>>1;
-      if (times[m] < t) lo = m+1; else hi = m;
+function renderResults(res) {
+  // Verdict
+  const ve = document.getElementById('verdict');
+  ve.className = 'verdict';
+  if (res.empty) {
+    ve.classList.add('bad');
+    ve.innerHTML = '<strong>No confirmed data</strong><br>Finger was never pressed long enough for analysis.';
+  } else if (res.medIbi && res.medFft) {
+    const diff = Math.abs(res.medIbi - res.medFft);
+    if (diff < 5) {
+      ve.classList.add('trust');
+      ve.innerHTML = `<strong>Trustworthy ✓</strong><br>IBI and FFT agree within ${diff.toFixed(1)} bpm.`;
+    } else if (diff < 15) {
+      ve.classList.add('marginal');
+      ve.innerHTML = `<strong>Marginal</strong><br>IBI=${res.medIbi.toFixed(1)}, FFT=${res.medFft.toFixed(1)} bpm. Disagree by ${diff.toFixed(1)} bpm.`;
+    } else {
+      ve.classList.add('bad');
+      ve.innerHTML = `<strong>Untrustworthy ✗</strong><br>IBI=${res.medIbi.toFixed(1)}, FFT=${res.medFft.toFixed(1)} bpm. Check finger placement.`;
     }
-    const v = (sig[lo]-meanS)/stdS;
-    const x = scaleX(tRel, 0, duration, pad, plotW);
-    const y = scaleY(v, yMin, yMax, pad, plotH);
-    ctx.beginPath(); ctx.arc(x, y, 2.5, 0, 2*Math.PI); ctx.fill();
+  } else {
+    ve.classList.add('bad');
+    ve.innerHTML = '<strong>Insufficient signal</strong>';
   }
-  // Title label
-  ctx.fillStyle = '#e8eaef';
-  ctx.font = '11px sans-serif';
-  ctx.fillText(`best = ${res.bestName} [${res.best.algo}]  |  beats=${res.beatTimes.length}`,
-               pad.l + 4, pad.t + 12);
-}
 
-function drawPerRoiChart(canvasId, res) {
-  const canvas = document.getElementById(canvasId);
-  canvas.height = 260;
-  const { ctx, W, H } = setupCanvas(canvas);
-  const duration = res.duration;
-  const yMin = -5, yMax = 5;
-  const { pad, plotW, plotH } = drawAxes(ctx, W, H, 0, duration, yMin, yMax, {yLabel:'signal', yDecimals:0});
-  const warmupN = Math.floor(FILTER_WARMUP_SEC * res.fps);
-  const t0 = res.t0;
+  // Summary
+  const grid = document.getElementById('summaryGrid');
+  grid.innerHTML = '';
+  const add = (label, val, sub='') => {
+    const d = document.createElement('div');
+    d.className = 'metric';
+    d.innerHTML = `<div class="label">${label}</div><div class="value">${val}</div>` +
+                  (sub ? `<div class="sub">${sub}</div>` : '');
+    grid.appendChild(d);
+  };
+  const d = Math.floor(res.duration);
+  add('Duration', `${String(Math.floor(d/60)).padStart(2,'0')}:${String(d%60).padStart(2,'0')}`);
+  add('FPS', res.fps ? res.fps.toFixed(1) : '--');
+  if (!res.empty) {
+    add('Beats', res.beatTimes.length);
+    add('HR (IBI)', res.medIbi ? res.medIbi.toFixed(1) + ' bpm' : '--');
+    add('HR (FFT)', res.medFft ? res.medFft.toFixed(1) + ' bpm' : '--');
+    if (res.hrv) {
+      add('RMSSD', res.hrv.rmssd_ms.toFixed(1) + ' ms');
+      add('SDNN', res.hrv.sdnn_ms.toFixed(1) + ' ms');
+      add('pNN50', res.hrv.pnn50_pct.toFixed(1) + '%');
+    }
+  }
 
-  // Sort so best is drawn last (on top)
-  const names = Object.keys(res.perRoi);
-  names.sort((a,b) => (a === res.bestName ? 1 : 0) - (b === res.bestName ? 1 : 0));
+  if (res.empty) return;
 
-  for (const name of names) {
-    const d = res.perRoi[name];
-    const sig = d.filtered;
-    const times = d.times;
-    if (!sig || sig.length < warmupN+20) continue;
-    const tail = sig.slice(warmupN);
-    const meanS = tail.reduce((a,b)=>a+b,0)/tail.length;
+  // Panel 1: pulse + beats
+  {
+    const canvas = document.getElementById('chart1');
+    const { ctx, W, H } = setupCanvas(canvas, 260);
+    const dur = res.sessionDur;
+    const warmupN = Math.floor(2.0 * res.fps);
+    const tail = res.filtered.slice(warmupN);
+    const mean = tail.reduce((a,b)=>a+b,0)/tail.length;
     let vr = 0;
-    for (const v of tail) vr += (v-meanS)*(v-meanS);
-    const stdS = Math.sqrt(vr/tail.length) + 1e-9;
-    const isWinner = (name === res.bestName);
-    ctx.strokeStyle = ROI_COLORS[name] || '#999';
-    ctx.globalAlpha = isWinner ? 1.0 : 0.35;
-    ctx.lineWidth = isWinner ? 1.6 : 0.8;
+    for (const v of tail) vr += (v-mean)*(v-mean);
+    const std = Math.sqrt(vr/tail.length) + 1e-9;
+    const { pad, plotW, plotH } = drawAxes(ctx, W, H, 0, dur, -5, 5, { yLabel:'pulse (norm)' });
     ctx.beginPath();
+    ctx.strokeStyle = '#c0392b'; ctx.lineWidth = 1;
     let started = false;
-    for (let i = warmupN; i < sig.length; i++) {
-      const tRel = times[i] - t0;
-      if (tRel < 0 || tRel > duration) continue;
-      const v = (sig[i]-meanS)/stdS;
-      const x = scaleX(tRel, 0, duration, pad, plotW);
-      const y = scaleY(v, yMin, yMax, pad, plotH);
+    for (let i = warmupN; i < res.filtered.length; i++) {
+      const tRel = res.fullTime[i] - res.t0;
+      const v = (res.filtered[i]-mean)/std;
+      const x = sx(tRel, 0, dur, pad, plotW);
+      const y = sy(v, -5, 5, pad, plotH);
       if (!started) { ctx.moveTo(x,y); started = true; } else ctx.lineTo(x,y);
     }
     ctx.stroke();
+    ctx.fillStyle = '#4ade80';
+    for (const t of res.beatTimes) {
+      const tRel = t - res.t0;
+      // find nearest idx
+      let lo = 0, hi = res.fullTime.length-1;
+      while (lo < hi) { const mm = (lo+hi)>>1; if (res.fullTime[mm] < t) lo = mm+1; else hi = mm; }
+      const v = (res.filtered[lo]-mean)/std;
+      const x = sx(tRel, 0, dur, pad, plotW);
+      const y = sy(v, -5, 5, pad, plotH);
+      ctx.beginPath(); ctx.arc(x, y, 2.5, 0, 2*Math.PI); ctx.fill();
+    }
+    document.getElementById('caption1').textContent =
+      `PPG pulse from red channel with ${res.beatTimes.length} detected beats (green dots)`;
   }
-  ctx.globalAlpha = 1.0;
-  // Legend
-  let ly = pad.t + 6;
-  ctx.font = '10px sans-serif';
-  for (const name of Object.keys(res.perRoi)) {
-    const d = res.perRoi[name];
-    ctx.fillStyle = ROI_COLORS[name] || '#999';
-    ctx.fillRect(W - pad.r - 130, ly, 10, 10);
-    ctx.fillStyle = '#e8eaef';
-    const lbl = `${name} q=${d.snr.toFixed(2)}` + (name === res.bestName ? ' ★' : '');
-    ctx.fillText(lbl, W - pad.r - 115, ly + 9);
-    ly += 14;
+
+  // Panel 2: HR timeline
+  {
+    const canvas = document.getElementById('chart2');
+    const { ctx, W, H } = setupCanvas(canvas, 220);
+    const dur = res.sessionDur;
+    const { pad, plotW, plotH } = drawAxes(ctx, W, H, 0, dur, 40, 180, { yLabel:'bpm' });
+    const drawLine = (data, color) => {
+      ctx.strokeStyle = color; ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      let started = false;
+      for (const [t,v] of data) {
+        const x = sx(t, 0, dur, pad, plotW);
+        const y = sy(v, 40, 180, pad, plotH);
+        if (!started) { ctx.moveTo(x,y); started = true; } else ctx.lineTo(x,y);
+      }
+      ctx.stroke();
+      ctx.fillStyle = color;
+      for (const [t,v] of data) {
+        const x = sx(t, 0, dur, pad, plotW);
+        const y = sy(v, 40, 180, pad, plotH);
+        ctx.beginPath(); ctx.arc(x, y, 2.2, 0, 2*Math.PI); ctx.fill();
+      }
+    };
+    drawLine(res.hrIbi, '#1f77b4');
+    drawLine(res.hrFft, '#ff7f0e');
+    // Medians
+    if (res.medIbi) {
+      ctx.strokeStyle = '#1f77b4'; ctx.setLineDash([5,3]); ctx.lineWidth = 1;
+      const y = sy(res.medIbi, 40, 180, pad, plotH);
+      ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(W-pad.r, y); ctx.stroke();
+    }
+    if (res.medFft) {
+      ctx.strokeStyle = '#ff7f0e'; ctx.setLineDash([5,3]); ctx.lineWidth = 1;
+      const y = sy(res.medFft, 40, 180, pad, plotH);
+      ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(W-pad.r, y); ctx.stroke();
+    }
+    ctx.setLineDash([]);
+    ctx.font = '11px sans-serif';
+    ctx.fillStyle = '#1f77b4'; ctx.fillRect(pad.l+4, pad.t+4, 10, 10);
+    ctx.fillStyle = '#e8eaef'; ctx.fillText(`IBI: ${res.medIbi ? res.medIbi.toFixed(1) : '--'}`, pad.l+18, pad.t+13);
+    ctx.fillStyle = '#ff7f0e'; ctx.fillRect(pad.l+4, pad.t+20, 10, 10);
+    ctx.fillStyle = '#e8eaef'; ctx.fillText(`FFT: ${res.medFft ? res.medFft.toFixed(1) : '--'}`, pad.l+18, pad.t+29);
+    document.getElementById('caption2').textContent = 'Heart rate from IBI (blue) vs FFT (orange). Agreement = trustworthy.';
   }
-}
 
-function drawHrChart(canvasId, res) {
-  const canvas = document.getElementById(canvasId);
-  canvas.height = 220;
-  const { ctx, W, H } = setupCanvas(canvas);
-  const duration = res.duration;
-  const yMin = 40, yMax = 180;
-  const { pad, plotW, plotH } = drawAxes(ctx, W, H, 0, duration, yMin, yMax, {yLabel:'bpm'});
-
-  // IBI line (blue)
-  const drawSeries = (data, color, dashed=false) => {
-    ctx.strokeStyle = color; ctx.lineWidth = 1.6;
-    ctx.setLineDash(dashed ? [4,3] : []);
+  // Panel 3: IBI
+  {
+    const canvas = document.getElementById('chart3');
+    const { ctx, W, H } = setupCanvas(canvas, 180);
+    const dur = res.sessionDur;
+    const { pad, plotW, plotH } = drawAxes(ctx, W, H, 0, dur, 300, 1500, { yLabel:'IBI (ms)' });
+    const points = [];
+    for (let i = 1; i < res.beatTimes.length; i++) {
+      const v = (res.beatTimes[i]-res.beatTimes[i-1])*1000;
+      const t = res.beatTimes[i] - res.t0;
+      if (v > 300 && v < 1500) points.push([t,v]);
+    }
+    ctx.strokeStyle = '#a855f7'; ctx.lineWidth = 1.2;
     ctx.beginPath();
     let started = false;
-    for (const [t,v] of data) {
-      if (isNaN(v)) { started = false; continue; }
-      const x = scaleX(t, 0, duration, pad, plotW);
-      const y = scaleY(v, yMin, yMax, pad, plotH);
+    for (const [t,v] of points) {
+      const x = sx(t, 0, dur, pad, plotW);
+      const y = sy(v, 300, 1500, pad, plotH);
       if (!started) { ctx.moveTo(x,y); started = true; } else ctx.lineTo(x,y);
     }
     ctx.stroke();
-    // Dots
-    ctx.fillStyle = color;
-    for (const [t,v] of data) {
-      if (isNaN(v)) continue;
-      const x = scaleX(t, 0, duration, pad, plotW);
-      const y = scaleY(v, yMin, yMax, pad, plotH);
+    ctx.fillStyle = '#a855f7';
+    for (const [t,v] of points) {
+      const x = sx(t, 0, dur, pad, plotW);
+      const y = sy(v, 300, 1500, pad, plotH);
       ctx.beginPath(); ctx.arc(x, y, 2, 0, 2*Math.PI); ctx.fill();
     }
-    ctx.setLineDash([]);
-  };
-  drawSeries(res.hrTimelineIbi, '#1f77b4');
-  drawSeries(res.hrTimelineFft, '#ff7f0e');
-
-  // Median lines
-  if (res.medIbi !== null) {
-    ctx.strokeStyle = '#1f77b4'; ctx.setLineDash([6,4]); ctx.lineWidth = 1;
-    const y = scaleY(res.medIbi, yMin, yMax, pad, plotH);
-    ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(W-pad.r, y); ctx.stroke();
-  }
-  if (res.medFft !== null) {
-    ctx.strokeStyle = '#ff7f0e'; ctx.setLineDash([6,4]); ctx.lineWidth = 1;
-    const y = scaleY(res.medFft, yMin, yMax, pad, plotH);
-    ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(W-pad.r, y); ctx.stroke();
-  }
-  ctx.setLineDash([]);
-
-  // Legend
-  ctx.font = '11px sans-serif';
-  ctx.fillStyle = '#1f77b4'; ctx.fillRect(pad.l+4, pad.t+4, 10, 10);
-  ctx.fillStyle = '#e8eaef';
-  ctx.fillText(`IBI median: ${res.medIbi !== null ? res.medIbi.toFixed(1) : '--'} bpm`, pad.l+18, pad.t+13);
-  ctx.fillStyle = '#ff7f0e'; ctx.fillRect(pad.l+4, pad.t+20, 10, 10);
-  ctx.fillStyle = '#e8eaef';
-  ctx.fillText(`FFT median: ${res.medFft !== null ? res.medFft.toFixed(1) : '--'} bpm`, pad.l+18, pad.t+29);
-}
-
-function drawIbiChart(canvasId, res) {
-  const canvas = document.getElementById(canvasId);
-  canvas.height = 180;
-  const { ctx, W, H } = setupCanvas(canvas);
-  const duration = res.duration;
-  const yMin = 300, yMax = 1500;
-  const { pad, plotW, plotH } = drawAxes(ctx, W, H, 0, duration, yMin, yMax, {yLabel:'IBI (ms)'});
-  const t0 = res.t0;
-  const beats = res.beatTimes;
-  const ibiData = [];
-  for (let i = 1; i < beats.length; i++) {
-    const v = (beats[i]-beats[i-1])*1000;
-    const t = beats[i] - t0;
-    if (v > 300 && v < 1500) ibiData.push([t, v]);
-  }
-  ctx.strokeStyle = '#a855f7'; ctx.lineWidth = 1.2;
-  ctx.beginPath();
-  let started = false;
-  for (const [t,v] of ibiData) {
-    const x = scaleX(t, 0, duration, pad, plotW);
-    const y = scaleY(v, yMin, yMax, pad, plotH);
-    if (!started) { ctx.moveTo(x,y); started = true; } else ctx.lineTo(x,y);
-  }
-  ctx.stroke();
-  ctx.fillStyle = '#a855f7';
-  for (const [t,v] of ibiData) {
-    const x = scaleX(t, 0, duration, pad, plotW);
-    const y = scaleY(v, yMin, yMax, pad, plotH);
-    ctx.beginPath(); ctx.arc(x, y, 1.8, 0, 2*Math.PI); ctx.fill();
-  }
-  if (ibiData.length) {
-    const mean = ibiData.reduce((a,b)=>a+b[1], 0)/ibiData.length;
-    ctx.strokeStyle = '#666'; ctx.setLineDash([6,4]);
-    const y = scaleY(mean, yMin, yMax, pad, plotH);
-    ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(W-pad.r, y); ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.fillStyle = '#8892a6'; ctx.font = '11px sans-serif';
-    ctx.fillText(`Mean IBI: ${mean.toFixed(0)} ms`, pad.l+4, pad.t+13);
+    if (points.length) {
+      const mean = points.reduce((a,b)=>a+b[1], 0)/points.length;
+      ctx.strokeStyle = '#666'; ctx.setLineDash([5,3]);
+      const y = sy(mean, 300, 1500, pad, plotH);
+      ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(W-pad.r, y); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = '#8892a6'; ctx.font = '11px sans-serif';
+      ctx.fillText(`Mean IBI: ${mean.toFixed(0)} ms`, pad.l+4, pad.t+13);
+    }
+    document.getElementById('caption3').textContent = 'Inter-beat intervals. Stable resting heart = tight cluster around the mean.';
   }
 }
 
-// =============== SESSION CONTROL ===============
+// ================== SESSION CONTROL ==================
 async function startSession() {
-  resetTimer();
   startBtn.disabled = true;
   stopBtn.disabled = false;
-  statusEl.textContent = 'Starting...';
+  resetTimer();
   // Reset state
-  for (const r of Object.values(roiStates)) r.clear();
-  beats.clear();
-  liveHrIbi = 0; liveHrFft = 0; rmssdVal = 0; sdnnVal = 0;
-  fpsTimes = []; lastSessionResults = null;
-  sessionStart = performance.now() / 1000;
-  if (!await startCamera()) {
-    startBtn.disabled = false; stopBtn.disabled = true; return;
-  }
-  await initFaceMesh();
+  redBuf = []; timeBuf = [];
+  fullRed = []; fullTime = [];
+  beats.clear(); detector.clear();
+  fpsSamples = []; lastFrameT = null;
+  liveHrIbi = 0; liveHrFft = 0; liveSnr = 0;
+  rmssdVal = 0; sdnnVal = 0;
+  lastSessionResults = null;
+  sessionStart = performance.now()/1000;
+  if (!await startCamera()) { startBtn.disabled = false; stopBtn.disabled = true; return; }
   running = true;
   startTimer();
-  requestAnimationFrame(processVideoFrame);
-  log('Session started — hold still, face the camera', 'ok');
+  requestAnimationFrame(processFrame);
+  log('Session started. Place finger over rear camera.', 'ok');
 }
 
 function stopSession() {
@@ -1341,9 +1161,7 @@ function stopSession() {
   stopCamera();
   startBtn.disabled = false;
   stopBtn.disabled = true;
-  statusEl.textContent = 'Stopped';
   log('Computing results...');
-  // Run full analysis
   setTimeout(() => {
     const res = runOfflineAnalysis();
     lastSessionResults = res;
@@ -1351,7 +1169,7 @@ function stopSession() {
     liveView.style.display = 'none';
     resultsView.classList.add('show');
     log('Results ready', 'ok');
-  }, 100);
+  }, 200);
 }
 
 backBtn.addEventListener('click', () => {
@@ -1361,32 +1179,27 @@ backBtn.addEventListener('click', () => {
 });
 
 downloadJsonBtn.addEventListener('click', () => {
-  if (!lastSessionResults) return;
-  const res = lastSessionResults;
+  if (!lastSessionResults || lastSessionResults.empty) return;
+  const r = lastSessionResults;
   const payload = {
     summary: {
-      duration_seconds: Math.round(res.duration*10)/10,
-      measured_fps: Math.round(res.fps*100)/100,
-      best_roi_overall: res.bestName,
-      roi_quality: Object.fromEntries(Object.entries(res.perRoi).map(([n,d]) => [n, Math.round(d.snr*1000)/1000])),
-      roi_algorithm_chosen: Object.fromEntries(Object.entries(res.perRoi).map(([n,d]) => [n, d.algo])),
-      total_beats_detected: res.beatTimes.length,
-      hrv: res.hrv,
-      median_hr_ibi_bpm: res.medIbi !== null ? Math.round(res.medIbi*10)/10 : null,
-      median_hr_fft_bpm: res.medFft !== null ? Math.round(res.medFft*10)/10 : null,
+      duration_seconds: Math.round(r.duration*10)/10,
+      measured_fps: Math.round(r.fps*100)/100,
+      total_beats_detected: r.beatTimes.length,
+      median_hr_ibi_bpm: r.medIbi ? Math.round(r.medIbi*10)/10 : null,
+      median_hr_fft_bpm: r.medFft ? Math.round(r.medFft*10)/10 : null,
+      hrv: r.hrv,
     },
-    hr_timeline_ibi_seconds_bpm: res.hrTimelineIbi
-      .filter(p => !isNaN(p[1])).map(p => [Math.round(p[0]*100)/100, Math.round(p[1]*10)/10]),
-    hr_timeline_fft_seconds_bpm: res.hrTimelineFft
-      .filter(p => !isNaN(p[1])).map(p => [Math.round(p[0]*100)/100, Math.round(p[1]*10)/10]),
-    beat_times_seconds: res.beatTimes.map(t => Math.round((t-res.t0)*1000)/1000),
-    ibis_ms: res.rawIbisMs.map(v => Math.round(v*10)/10),
+    hr_timeline_ibi: r.hrIbi.map(p => [Math.round(p[0]*100)/100, Math.round(p[1]*10)/10]),
+    hr_timeline_fft: r.hrFft.map(p => [Math.round(p[0]*100)/100, Math.round(p[1]*10)/10]),
+    beat_times_seconds: r.beatTimes.map(t => Math.round((t-r.t0)*1000)/1000),
+    ibis_ms: r.rawIbisMs.map(v => Math.round(v*10)/10),
   };
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `rppg_${new Date().toISOString().replace(/[:.]/g,'-').slice(0,19)}.json`;
+  a.download = `contact_ppg_${new Date().toISOString().replace(/[:.]/g,'-').slice(0,19)}.json`;
   document.body.appendChild(a); a.click();
   setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 100);
 });
