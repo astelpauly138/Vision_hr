@@ -180,22 +180,22 @@
       <div class="metric">
         <div class="label">HR (IBI)</div>
         <div class="value" id="hrIbi">--</div>
-        <div class="sub">bpm</div>
+        <div class="sub">bpm — from beat intervals</div>
       </div>
       <div class="metric">
         <div class="label">HR (FFT)</div>
         <div class="value" id="hrFft">--</div>
-        <div class="sub">bpm</div>
+        <div class="sub">bpm — from frequency</div>
       </div>
       <div class="metric">
-        <div class="label">RMSSD</div>
-        <div class="value" id="rmssd">--</div>
+        <div class="label">Mean IBI</div>
+        <div class="value" id="meanIbi">--</div>
         <div class="sub">ms</div>
       </div>
       <div class="metric">
-        <div class="label">SDNN</div>
-        <div class="value" id="sdnn">--</div>
-        <div class="sub">ms</div>
+        <div class="label">Beats</div>
+        <div class="value" id="beatsCount">--</div>
+        <div class="sub">detected</div>
       </div>
       <div class="metric wide">
         <div class="label">Signal Quality</div>
@@ -262,7 +262,7 @@ const FINGER_R_MAX         = 250;
 const FINGER_G_MAX         = 150;
 const FINGER_RG_RATIO_MIN  = 1.8;
 const FINGER_STD_MAX       = 35;
-const FINGER_CONFIRM_SEC   = 3.0;
+const FINGER_CONFIRM_SEC   = 5.0;
 const FINGER_PULSE_SNR_MIN = 0.05;
 
 // Peak detection
@@ -284,8 +284,8 @@ const liveView  = document.getElementById('liveView');
 const resultsView = document.getElementById('resultsView');
 const hrIbiEl   = document.getElementById('hrIbi');
 const hrFftEl   = document.getElementById('hrFft');
-const rmssdEl   = document.getElementById('rmssd');
-const sdnnEl    = document.getElementById('sdnn');
+const meanIbiEl = document.getElementById('meanIbi');
+const beatsCountEl = document.getElementById('beatsCount');
 const snrValEl  = document.getElementById('snrVal');
 const snrSubEl  = document.getElementById('snrSub');
 const waveCanvas= document.getElementById('waveChart');
@@ -524,6 +524,7 @@ let rmssdVal = 0, sdnnVal = 0;
 let lastProcessT = 0;
 let lastSessionResults = null;
 let timerInterval = null;
+let recalculatingUntil = 0;   // epoch-seconds; show "recalculating" banner until this time
 
 function startTimer() {
   timerEl.classList.add('running');
@@ -665,12 +666,33 @@ function processFrame() {
 
   // Finger check
   const res = detector.update(rMean, gMean, grayStd, now, redBuf, measuredFps);
+  const prevState = state;
   state = res.state;
-  // Update banner
-  bannerEl.className = 'banner ' + state;
-  const msgs = { no_finger: 'PLACE FINGER ON CAMERA', detecting: 'DETECTING FINGER...', confirmed: 'MEASURING HEART RATE' };
-  bannerEl.textContent = msgs[state];
-  reasonEl.textContent = res.reason;
+
+  // Handle finger loss AFTER a confirmed session: reset and restart.
+  // We don't want old partial data carried into a new attempt.
+  if (prevState === 'confirmed' && state !== 'confirmed') {
+    log('Finger lost — restarting analysis', 'warn');
+    recalculatingUntil = now + 2.0;   // show the recalculating message briefly
+    // Wipe all analysis buffers; the session start time is reset too
+    redBuf = []; timeBuf = [];
+    fullRed = []; fullTime = [];
+    beats.clear();
+    liveHrIbi = 0; liveHrFft = 0; liveSnr = 0;
+    sessionStart = now;   // clock restarts from here
+  }
+
+  // Update banner. Special "recalculating" override takes priority.
+  if (now < recalculatingUntil) {
+    bannerEl.className = 'banner detecting';
+    bannerEl.textContent = 'RECALCULATING — NEW SESSION';
+    reasonEl.textContent = 'Finger moved. Previous data discarded.';
+  } else {
+    bannerEl.className = 'banner ' + state;
+    const msgs = { no_finger: 'PLACE FINGER ON CAMERA', detecting: 'DETECTING FINGER...', confirmed: 'MEASURING HEART RATE' };
+    bannerEl.textContent = msgs[state];
+    reasonEl.textContent = res.reason;
+  }
   fpsBadge.textContent = `FPS ${measuredFps.toFixed(1)}`;
 
   // When confirmed, record and analyze
@@ -692,6 +714,7 @@ function processFrame() {
       } catch(e) { filt = sig; }
 
       liveSnr = signalSnr(filt, measuredFps);
+
 
       // FFT HR
       const winN = Math.floor(HR_WIN_SEC * measuredFps);
@@ -765,8 +788,19 @@ function processFrame() {
 function updateDisplay() {
   hrIbiEl.textContent = liveHrIbi > 0 ? liveHrIbi.toFixed(0) : '--';
   hrFftEl.textContent = liveHrFft > 0 ? liveHrFft.toFixed(0) : '--';
-  rmssdEl.textContent = rmssdVal > 0 ? rmssdVal.toFixed(0) : '--';
-  sdnnEl.textContent = sdnnVal > 0 ? sdnnVal.toFixed(0) : '--';
+  // Mean IBI in ms
+  if (beats.times.length >= 2) {
+    const ibis = [];
+    for (let i = 1; i < beats.times.length; i++) {
+      const d = (beats.times[i]-beats.times[i-1])*1000;
+      if (d > 300 && d < 1500) ibis.push(d);
+    }
+    if (ibis.length) {
+      const mean = ibis.reduce((a,b)=>a+b)/ibis.length;
+      meanIbiEl.textContent = mean.toFixed(0);
+    } else meanIbiEl.textContent = '--';
+  } else meanIbiEl.textContent = '--';
+  beatsCountEl.textContent = beats.times.length || '--';
   if (liveSnr > 0) {
     snrValEl.textContent = liveSnr.toFixed(3);
     if (liveSnr > 0.2) { snrValEl.style.color = 'var(--good)'; snrSubEl.textContent = 'Strong signal'; }
@@ -1014,10 +1048,13 @@ function renderResults(res) {
     add('Beats', res.beatTimes.length);
     add('HR (IBI)', res.medIbi ? res.medIbi.toFixed(1) + ' bpm' : '--');
     add('HR (FFT)', res.medFft ? res.medFft.toFixed(1) + ' bpm' : '--');
-    if (res.hrv) {
-      add('RMSSD', res.hrv.rmssd_ms.toFixed(1) + ' ms');
-      add('SDNN', res.hrv.sdnn_ms.toFixed(1) + ' ms');
-      add('pNN50', res.hrv.pnn50_pct.toFixed(1) + '%');
+    // Mean IBI from valid beats
+    const validIbis = res.rawIbisMs.filter(v => v > 300 && v < 1500);
+    if (validIbis.length) {
+      const meanIbi = validIbis.reduce((a,b)=>a+b)/validIbis.length;
+      add('Mean IBI', meanIbi.toFixed(0) + ' ms');
+      add('Min / Max IBI',
+          Math.min(...validIbis).toFixed(0) + ' / ' + Math.max(...validIbis).toFixed(0) + ' ms');
     }
   }
 
@@ -1159,6 +1196,7 @@ async function startSession() {
   liveHrIbi = 0; liveHrFft = 0; liveSnr = 0;
   rmssdVal = 0; sdnnVal = 0;
   lastSessionResults = null;
+  recalculatingUntil = 0;
   sessionStart = performance.now()/1000;
   if (!await startCamera()) { startBtn.disabled = false; stopBtn.disabled = true; return; }
   running = true;
