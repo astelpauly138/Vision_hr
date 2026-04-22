@@ -924,11 +924,20 @@ function runOfflineAnalysis() {
 function setupCanvas(canvas, heightPx) {
   const dpr = window.devicePixelRatio || 1;
   const rect = canvas.getBoundingClientRect();
-  canvas.width = rect.width * dpr;
+  // If rect.width is still 0 (layout not ready), fall back to parent's inner width.
+  let W = rect.width;
+  if (W < 10) {
+    const parent = canvas.parentElement;
+    W = parent ? parent.clientWidth - 20 : 320;   // subtract panel padding
+  }
+  if (W < 10) W = 320;
+  canvas.width = W * dpr;
   canvas.height = heightPx * dpr;
+  canvas.style.width = W + 'px';
+  canvas.style.height = heightPx + 'px';
   const ctx = canvas.getContext('2d');
   ctx.scale(dpr, dpr);
-  return { ctx, W: rect.width, H: heightPx };
+  return { ctx, W, H: heightPx };
 }
 function drawAxes(ctx, W, H, xMin, xMax, yMin, yMax, opts={}) {
   const pad = { l: 46, r: 10, t: 10, b: 24 };
@@ -962,6 +971,9 @@ function sx(t, tMin, tMax, pad, plotW) { return pad.l + ((t-tMin)/(tMax-tMin+1e-
 function sy(v, yMin, yMax, pad, plotH) { return pad.t + plotH - ((v-yMin)/(yMax-yMin+1e-9))*plotH; }
 
 function renderResults(res) {
+  // Make sure the user actually sees the results panel at the top
+  window.scrollTo(0, 0);
+
   // Verdict
   const ve = document.getElementById('verdict');
   ve.className = 'verdict';
@@ -1165,10 +1177,23 @@ function stopSession() {
   setTimeout(() => {
     const res = runOfflineAnalysis();
     lastSessionResults = res;
-    renderResults(res);
+    // CRITICAL: show the results view FIRST, then render.
+    // Canvas elements inside a display:none container have zero width,
+    // so drawing to them silently produces nothing. We flip visibility,
+    // then wait two rAF ticks for layout + paint before drawing charts.
     liveView.style.display = 'none';
     resultsView.classList.add('show');
-    log('Results ready', 'ok');
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        try {
+          renderResults(res);
+          log('Results ready', 'ok');
+        } catch (err) {
+          log('Render error: ' + err.message, 'err');
+          console.error(err);
+        }
+      });
+    });
   }, 200);
 }
 
