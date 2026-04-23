@@ -15,17 +15,18 @@
 </script>
 <style>
 :root {
-  --bg: #0f1117;
-  --panel: #1a1d26;
-  --border: #2a2f3d;
-  --text: #e8eaef;
-  --muted: #8892a6;
-  --good: #4ade80;
-  --mid: #fbbf24;
-  --bad: #ef4444;
-  --accent: #60a5fa;
-  --accent2: #f97316;
-  --purple: #a855f7;
+  --bg: #ffffff;
+  --panel: #f6f8fa;
+  --panel2: #eaeef2;
+  --border: #d0d7de;
+  --text: #1f2328;
+  --muted: #656d76;
+  --good: #1a7f37;
+  --mid:  #9a6700;
+  --bad:  #cf222e;
+  --accent: #0969da;
+  --accent2: #bc4c00;
+  --purple: #8250df;
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
 html, body {
@@ -77,7 +78,7 @@ canvas#overlay { pointer-events: none; }
 .controls { display: flex; gap: 8px; }
 button {
   flex: 1; padding: 14px;
-  background: var(--accent); color: #000; border: none;
+  background: var(--accent); color: #fff; border: none;
   border-radius: 8px; font-size: 16px; font-weight: 700; cursor: pointer;
 }
 button.secondary { background: var(--panel); color: var(--text); border: 1px solid var(--border); }
@@ -101,7 +102,7 @@ button:disabled { opacity: 0.4; cursor: not-allowed; }
   font-size: 12px; font-weight: 500; color: var(--muted);
   text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px;
 }
-canvas.chart { width: 100%; height: 120px; display: block; background: #0a0c12; border-radius: 4px; }
+canvas.chart { width: 100%; height: 120px; display: block; background: var(--panel2); border-radius: 4px; border: 1px solid var(--border); }
 
 .log {
   font-size: 11px; color: var(--muted); max-height: 140px;
@@ -116,20 +117,41 @@ canvas.chart { width: 100%; height: 120px; display: block; background: #0a0c12; 
 .plotly-graph { width: 100%; min-height: 280px; }
 
 .summary-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-.verdict {
-  padding: 12px; border-radius: 8px; text-align: center;
-  font-size: 13px; line-height: 1.5;
-}
-.verdict.good { background: rgba(74,222,128,0.1); border: 1px solid var(--good); color: var(--good); }
-.verdict.mild { background: rgba(251,191,36,0.1); border: 1px solid var(--mid); color: var(--mid); }
-.verdict.bad  { background: rgba(239,68,68,0.1); border: 1px solid var(--bad); color: var(--bad); }
-
 .segment-row {
-  background: #0a0c12; border: 1px solid var(--border); border-radius: 6px;
+  background: var(--panel2); border: 1px solid var(--border); border-radius: 6px;
   padding: 8px 10px; margin-bottom: 6px;
   font-family: ui-monospace, monospace; font-size: 11px; line-height: 1.5;
 }
 .segment-row strong { color: var(--accent); }
+
+.ahi-box {
+  padding: 14px; border-radius: 8px; text-align: center;
+  font-size: 14px; line-height: 1.6;
+}
+.ahi-box strong { font-size: 16px; }
+.ahi-box.normal       { background: rgba(74,222,128,0.10); border: 1px solid var(--good); color: var(--good); }
+.ahi-box.mild         { background: rgba(251,191,36,0.10); border: 1px solid var(--mid);  color: var(--mid);  }
+.ahi-box.moderate     { background: rgba(249,115,22,0.10); border: 1px solid var(--accent2); color: var(--accent2); }
+.ahi-box.severe       { background: rgba(239,68,68,0.10); border: 1px solid var(--bad);  color: var(--bad);  }
+.ahi-box.insufficient { background: var(--panel); border: 1px dashed var(--border); color: var(--muted); }
+.ahi-box .detail { font-size: 11px; color: var(--muted); margin-top: 4px; }
+.ahi-box.normal .detail, .ahi-box.mild .detail,
+.ahi-box.moderate .detail, .ahi-box.severe .detail { color: inherit; opacity: 0.85; }
+
+.ahi-scale {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px;
+  font-size: 11px; margin-top: 8px;
+}
+.ahi-scale > div {
+  padding: 6px 8px; border-radius: 6px;
+  border: 1px solid var(--border); background: var(--panel2);
+  text-align: center; color: var(--muted);
+}
+.ahi-scale > div.active { color: var(--text); font-weight: 700; }
+.ahi-scale > div.normal.active   { border-color: var(--good);    background: rgba(74,222,128,0.12); }
+.ahi-scale > div.mild.active     { border-color: var(--mid);     background: rgba(251,191,36,0.12); }
+.ahi-scale > div.moderate.active { border-color: var(--accent2); background: rgba(249,115,22,0.12); }
+.ahi-scale > div.severe.active   { border-color: var(--bad);     background: rgba(239,68,68,0.12); }
 </style>
 </head>
 <body>
@@ -181,7 +203,16 @@ canvas.chart { width: 100%; height: 120px; display: block; background: #0a0c12; 
       <h2 style="font-size:16px;">Session Results</h2>
       <button class="secondary" id="backBtn" style="flex:0 0 auto;padding:8px 14px;">New Session</button>
     </div>
-    <div class="verdict" id="verdict"></div>
+    <div class="panel">
+      <h3>AHI severity</h3>
+      <div class="ahi-box insufficient" id="ahiBox"></div>
+      <div class="ahi-scale" id="ahiScale">
+        <div class="normal">Normal<br><span style="opacity:0.7">&lt; 5/hr</span></div>
+        <div class="mild">Mild<br><span style="opacity:0.7">5 – 14.9</span></div>
+        <div class="moderate">Moderate<br><span style="opacity:0.7">15 – 29.9</span></div>
+        <div class="severe">Severe<br><span style="opacity:0.7">≥ 30</span></div>
+      </div>
+    </div>
     <div class="panel">
       <h3>Summary</h3>
       <div class="summary-grid" id="summaryGrid"></div>
@@ -648,8 +679,8 @@ function drawLiveWaveform(chest_f) {
   const W = waveCanvas.clientWidth, H = waveCanvas.clientHeight;
   if (waveCanvas.width !== W || waveCanvas.height !== H) { waveCanvas.width = W; waveCanvas.height = H; }
   waveCtx.clearRect(0, 0, W, H);
-  waveCtx.fillStyle = '#0a0c12'; waveCtx.fillRect(0, 0, W, H);
-  waveCtx.strokeStyle = '#2a2f3d';
+  waveCtx.fillStyle = '#eaeef2'; waveCtx.fillRect(0, 0, W, H);
+  waveCtx.strokeStyle = '#d0d7de';
   waveCtx.beginPath(); waveCtx.moveTo(0, H/2); waveCtx.lineTo(W, H/2); waveCtx.stroke();
   if (!chest_f || chest_f.length < 10) return;
   const dispN = Math.min(chest_f.length, 30 * PROCESS_FPS);
@@ -659,7 +690,7 @@ function drawLiveWaveform(chest_f) {
   let maxAbs = 0;
   for (let i = 0; i < seg.length; i++) { const v = (seg[i]-m)/s; if (Math.abs(v) > maxAbs) maxAbs = Math.abs(v); }
   if (maxAbs < 0.1) maxAbs = 1;
-  waveCtx.strokeStyle = '#4ade80';
+  waveCtx.strokeStyle = '#1a7f37';
   waveCtx.lineWidth = 1.4;
   waveCtx.beginPath();
   for (let i = 0; i < seg.length; i++) {
@@ -1016,20 +1047,26 @@ function computeOfflineResults() {
   const longest = events.reduce((m, e) => Math.max(m, e.duration), 0);
   const eph = events.length / Math.max(duration/3600, 1/3600);
 
-  let severity = 'Insufficient data (<20 min session)';
-  let sevClass = 'mild';
-  if (duration >= 20*60) {
-    if      (eph < 5)  { severity = 'Normal (<5/hr)';      sevClass = 'good'; }
-    else if (eph < 15) { severity = 'Mild (5-15/hr)';      sevClass = 'mild'; }
-    else if (eph < 30) { severity = 'Moderate (15-30/hr)'; sevClass = 'mild'; }
-    else               { severity = 'Severe (>30/hr)';     sevClass = 'bad';  }
+  // ---- AHI severity ----
+  // AHI = (total apneas + total hypopneas) / total hours
+  // Only meaningful if the session is long enough (<20 min makes AHI unreliable,
+  // e.g. 1 event in 2 minutes extrapolates to "severe" which is nonsense).
+  const MIN_SECONDS_FOR_AHI = 20 * 60;
+  let ahi = null, ahiSeverity = null, ahiClass = 'insufficient';
+  if (duration >= MIN_SECONDS_FOR_AHI) {
+    ahi = (apneas + hypos) / (duration / 3600);
+    if      (ahi < 5)  { ahiSeverity = 'Normal';   ahiClass = 'normal';   }
+    else if (ahi < 15) { ahiSeverity = 'Mild';     ahiClass = 'mild';     }
+    else if (ahi < 30) { ahiSeverity = 'Moderate'; ahiClass = 'moderate'; }
+    else               { ahiSeverity = 'Severe';   ahiClass = 'severe';   }
   }
 
   return {
     empty: false, t0, tRel, duration,
     filtered, baseline: session.baseline, current: session.current,
     events, inhales, exhales,
-    apneas, hypos, longest, eph, severity, sevClass,
+    apneas, hypos, longest, eph,
+    ahi, ahiSeverity, ahiClass,
     relock_times: session.relock_times,
     locked_baselines: session.locked_baselines,
     total: n
@@ -1049,14 +1086,27 @@ function nearestIdx(times, t) {
 function renderResults(res) {
   window.scrollTo(0, 0);
 
-  const ve = document.getElementById('verdict');
-  if (res.empty) {
-    ve.className = 'verdict bad';
-    ve.innerHTML = '<strong>No data captured.</strong>';
+  // ---- AHI severity box + scale ----
+  const ahiBox = document.getElementById('ahiBox');
+  ahiBox.className = 'ahi-box ' + res.ahiClass;
+  if (res.ahi === null) {
+    ahiBox.innerHTML =
+      `<strong>Severity can't be discussed</strong>` +
+      `<div class="detail">Insufficient events / data ` +
+      `(need &ge; 20 min session for a reliable AHI)</div>`;
   } else {
-    ve.className = 'verdict ' + res.sevClass;
-    ve.innerHTML = `<strong>${res.severity}</strong><br>` +
-                   `${res.events.length} event(s) · ${res.eph.toFixed(1)}/hr · longest ${res.longest.toFixed(1)}s`;
+    ahiBox.innerHTML =
+      `<strong>${res.ahiSeverity}</strong> &nbsp;·&nbsp; AHI = ${res.ahi.toFixed(1)} /hr` +
+      `<div class="detail">(${res.apneas} apneas + ${res.hypos} hypopneas) &divide; ` +
+      `${(res.duration/3600).toFixed(2)} hours</div>`;
+  }
+  // Highlight the active cell in the reference scale
+  const scaleChildren = document.getElementById('ahiScale').children;
+  for (const el of scaleChildren) el.classList.remove('active');
+  if (res.ahiClass !== 'insufficient') {
+    for (const el of scaleChildren) {
+      if (el.classList.contains(res.ahiClass)) el.classList.add('active');
+    }
   }
 
   const grid = document.getElementById('summaryGrid');
@@ -1083,39 +1133,51 @@ function renderResults(res) {
 
   if (res.empty) return;
 
-  const darkLayout = {
-    paper_bgcolor: '#1a1d26', plot_bgcolor: '#0f1117',
-    font: { color: '#e8eaef' },
-    margin: { t: 30, l: 55, r: 20, b: 42 },
-    xaxis: { gridcolor: '#2a2f3d', title: 'Time (s)' },
+  // Force identical x-axis range + identical margins across all three
+  // graphs so their time axes line up pixel-for-pixel.
+  const xMin = 0;
+  const xMax = res.duration > 0 ? res.duration : (res.tRel[res.tRel.length - 1] || 1);
+  const sharedMargin = { t: 30, l: 60, r: 20, b: 42 };
+  const baseLayout = {
+    paper_bgcolor: '#ffffff', plot_bgcolor: '#f6f8fa',
+    font: { color: '#1f2328' },
+    margin: sharedMargin,
+    xaxis: { gridcolor: '#d0d7de', linecolor: '#d0d7de', zerolinecolor: '#d0d7de',
+             title: 'Time (s)', range: [xMin, xMax], fixedrange: false },
     legend: { orientation: 'h', y: 1.12, font: { size: 11 } }
+  };
+  // Plotly config shared by all three graphs -- no box/lasso select, no logo.
+  const plotConfig = {
+    responsive: true,
+    displaylogo: false,
+    modeBarButtonsToRemove: ['select2d', 'lasso2d', 'toggleSpikelines']
   };
 
   // Graph 1
   const traces1 = [{
     x: res.tRel, y: res.filtered,
     mode: 'lines', name: 'Chest',
-    line: { color: '#4ade80', width: 1 },
+    line: { color: '#1a7f37', width: 1 },
     hovertemplate: 't=%{x:.2f}s<br>y=%{y:.3f}<extra></extra>'
   }];
   if (res.inhales.length) {
     const xs = res.inhales.map(t => t - res.t0);
     const ys = res.inhales.map(t => { const i = nearestIdx(session.times, t); return res.filtered[i] || 0; });
     traces1.push({ x: xs, y: ys, mode: 'markers', name: `Inhale (${res.inhales.length})`,
-                   marker: { color: '#60a5fa', size: 5 } });
+                   marker: { color: '#0969da', size: 5 } });
   }
   if (res.exhales.length) {
     const xs = res.exhales.map(t => t - res.t0);
     const ys = res.exhales.map(t => { const i = nearestIdx(session.times, t); return res.filtered[i] || 0; });
     traces1.push({ x: xs, y: ys, mode: 'markers', name: `Exhale (${res.exhales.length})`,
-                   marker: { color: '#f97316', size: 5 } });
+                   marker: { color: '#bc4c00', size: 5 } });
   }
   const shapes1 = [];
   for (const e of res.events) {
     shapes1.push({
       type: 'rect', xref: 'x', yref: 'paper',
       x0: e.start - res.t0, x1: e.end - res.t0, y0: 0, y1: 1,
-      fillcolor: e.type === 'apnea' ? 'rgba(239,68,68,0.25)' : 'rgba(251,191,36,0.25)',
+      fillcolor: e.type === 'apnea' ? 'rgba(207,34,46,0.22)' : 'rgba(154,103,0,0.22)',
       line: { width: 0 }
     });
   }
@@ -1123,13 +1185,14 @@ function renderResults(res) {
     shapes1.push({
       type: 'line', xref: 'x', yref: 'paper',
       x0: rt - res.t0, x1: rt - res.t0, y0: 0, y1: 1,
-      line: { color: '#22d3ee', width: 1, dash: 'dash' }
+      line: { color: '#0891b2', width: 1, dash: 'dash' }
     });
   }
-  Plotly.newPlot('graph1', traces1, Object.assign({}, darkLayout, {
-    yaxis: { gridcolor: '#2a2f3d', title: 'Normalised amplitude' },
+  Plotly.newPlot('graph1', traces1, Object.assign({}, baseLayout, {
+    yaxis: { gridcolor: '#d0d7de', title: 'Normalised amplitude',
+             zerolinecolor: '#d0d7de', linecolor: '#d0d7de' },
     shapes: shapes1
-  }), { responsive: true, displaylogo: false });
+  }), plotConfig);
 
   // Graph 2
   const zeros = res.tRel.map(_ => 0);
@@ -1138,18 +1201,18 @@ function renderResults(res) {
   const traces2 = [
     { x: res.tRel, y: zeros, line: { width: 0 }, showlegend: false, hoverinfo: 'skip', type: 'scatter' },
     { x: res.tRel, y: apneaTop, fill: 'tonexty',
-      fillcolor: 'rgba(239,68,68,0.18)', line: { width: 0 },
+      fillcolor: 'rgba(207,34,46,0.15)', line: { width: 0 },
       name: 'Apnea zone (≥80% drop)', type: 'scatter', hoverinfo: 'skip' },
     { x: res.tRel, y: hypoTop, fill: 'tonexty',
-      fillcolor: 'rgba(251,191,36,0.18)', line: { width: 0 },
+      fillcolor: 'rgba(154,103,0,0.15)', line: { width: 0 },
       name: 'Hypopnea zone (≥50% drop)', type: 'scatter', hoverinfo: 'skip' },
     { x: res.tRel, y: res.baseline,
       mode: 'lines', name: 'Baseline (fixed per segment)',
-      line: { color: '#e5e7eb', width: 1.8 },
+      line: { color: '#374151', width: 1.8 },
       hovertemplate: 't=%{x:.2f}s<br>baseline=%{y:.3f}<extra></extra>' },
     { x: res.tRel, y: res.current,
       mode: 'lines', name: 'Current (5s max-min)',
-      line: { color: '#60a5fa', width: 1 },
+      line: { color: '#0969da', width: 1 },
       hovertemplate: 't=%{x:.2f}s<br>current=%{y:.3f}<extra></extra>' }
   ];
   const annotations2 = res.locked_baselines.map((lb, i) => {
@@ -1160,22 +1223,25 @@ function renderResults(res) {
     }
     return {
       x: lb.time - res.t0, y: lb.value, text,
-      showarrow: true, arrowhead: 2, arrowcolor: '#555', ax: 30, ay: -34,
-      bgcolor: 'rgba(245,245,245,0.95)', bordercolor: '#888',
-      font: { color: '#222', size: 10 }
+      showarrow: true, arrowhead: 2, arrowcolor: '#656d76', ax: 30, ay: -34,
+      bgcolor: 'rgba(255,255,255,0.95)', bordercolor: '#d0d7de',
+      font: { color: '#1f2328', size: 10 }
     };
   });
   const shapes2 = res.relock_times.map(rt => ({
     type: 'line', xref: 'x', yref: 'paper',
     x0: rt - res.t0, x1: rt - res.t0, y0: 0, y1: 1,
-    line: { color: '#22d3ee', width: 1, dash: 'dash' }
+    line: { color: '#0891b2', width: 1, dash: 'dash' }
   }));
-  Plotly.newPlot('graph2', traces2, Object.assign({}, darkLayout, {
-    yaxis: { gridcolor: '#2a2f3d', title: 'Amplitude' },
+  Plotly.newPlot('graph2', traces2, Object.assign({}, baseLayout, {
+    yaxis: { gridcolor: '#d0d7de', title: 'Amplitude',
+             zerolinecolor: '#d0d7de', linecolor: '#d0d7de' },
     shapes: shapes2, annotations: annotations2
-  }), { responsive: true, displaylogo: false });
+  }), plotConfig);
 
-  // Graph 3
+  // Graph 3 -- event timeline. Uses the SAME xaxis range and left margin as
+  // graphs 1 & 2 so the time axis lines up exactly. The y-axis is hidden but
+  // we keep the same margins to avoid plot-area width drift.
   const traces3 = [];
   const apneas = res.events.filter(e => e.type === 'apnea');
   const hypos  = res.events.filter(e => e.type === 'hypopnea');
@@ -1187,19 +1253,19 @@ function renderResults(res) {
   if (apneas.length) {
     const { xs, ys } = buildSpans(apneas);
     traces3.push({ x: xs, y: ys, mode: 'lines',
-      line: { color: '#ef4444', width: 24 }, name: `Apnea (${apneas.length})`,
+      line: { color: '#cf222e', width: 22 }, name: `Apnea (${apneas.length})`,
       hovertemplate: 't=%{x:.1f}s<extra>Apnea</extra>' });
   }
   if (hypos.length) {
     const { xs, ys } = buildSpans(hypos);
     traces3.push({ x: xs, y: ys, mode: 'lines',
-      line: { color: '#fbbf24', width: 24 }, name: `Hypopnea (${hypos.length})`,
+      line: { color: '#9a6700', width: 22 }, name: `Hypopnea (${hypos.length})`,
       hovertemplate: 't=%{x:.1f}s<extra>Hypopnea</extra>' });
   }
-  Plotly.newPlot('graph3', traces3, Object.assign({}, darkLayout, {
-    yaxis: { visible: false, range: [0.5, 1.5] },
+  Plotly.newPlot('graph3', traces3, Object.assign({}, baseLayout, {
+    yaxis: { visible: false, range: [0.5, 1.5], showgrid: false, zeroline: false },
     height: 150
-  }), { responsive: true, displaylogo: false });
+  }), plotConfig);
 
   // Per-segment breakdown
   const segDiv = document.getElementById('segmentDetails');
