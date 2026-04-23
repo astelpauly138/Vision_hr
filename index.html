@@ -233,8 +233,8 @@ const HIGHPASS_CUTOFF          = 0.08;
 const MIN_BREATH_INTERVAL      = 1.0;
 const PEAK_MIN_ABS             = 0.08;
 
-const APNEA_AMPLITUDE_RATIO    = 0.15;
-const HYPOPNEA_AMPLITUDE_RATIO = 0.40;
+const APNEA_AMPLITUDE_RATIO    = 0.20;   // ratio < 0.20 -> apnea    (>=80% drop)
+const HYPOPNEA_AMPLITUDE_RATIO = 0.50;   // ratio < 0.50 -> hypopnea (>=50% drop)
 const EVENT_MIN_DURATION       = 10.0;
 
 const CHEST_Y_START_FRAC       = 0.05;
@@ -1139,10 +1139,10 @@ function renderResults(res) {
     { x: res.tRel, y: zeros, line: { width: 0 }, showlegend: false, hoverinfo: 'skip', type: 'scatter' },
     { x: res.tRel, y: apneaTop, fill: 'tonexty',
       fillcolor: 'rgba(239,68,68,0.18)', line: { width: 0 },
-      name: 'Apnea zone (≥85% drop)', type: 'scatter', hoverinfo: 'skip' },
+      name: 'Apnea zone (≥80% drop)', type: 'scatter', hoverinfo: 'skip' },
     { x: res.tRel, y: hypoTop, fill: 'tonexty',
       fillcolor: 'rgba(251,191,36,0.18)', line: { width: 0 },
-      name: 'Hypopnea zone (≥60% drop)', type: 'scatter', hoverinfo: 'skip' },
+      name: 'Hypopnea zone (≥50% drop)', type: 'scatter', hoverinfo: 'skip' },
     { x: res.tRel, y: res.baseline,
       mode: 'lines', name: 'Baseline (fixed per segment)',
       line: { color: '#e5e7eb', width: 1.8 },
