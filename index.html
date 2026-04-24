@@ -387,16 +387,28 @@ function findPeaks(signal, minDist, minProm) {
   return peaks;
 }
 
-// Mode-based baseline (mirror of Python robust_baseline_amplitude)
-function robustBaselineAmplitude(sig, fs, windowSec, nBins=8, minPeaks=4) {
+// IQR (Tukey fence) baseline.
+//  1. Detect all peaks (inhale tops) and troughs (exhale bottoms) in the
+//     last `windowSec` of the filtered signal.
+//  2. Sort peaks. Split into lower/upper halves.
+//     Q1 = median(lower half),  Q3 = median(upper half),  IQR = Q3 - Q1.
+//  3. Keep values within the Tukey fence [Q1 - 1.5*IQR, Q3 + 1.5*IQR].
+//     Anything outside that fence is a statistical outlier -- discarded.
+//  4. typical_peak = mean(kept peaks).   typical_trough = mean(kept troughs).
+//  5. baseline = typical_peak - typical_trough.
+//
+// Falls back to plain max-min if fewer than `minPeaks` peaks or troughs
+// are found (not enough data for IQR to be meaningful).
+function robustBaselineAmplitude(sig, fs, windowSec, minPeaks=4) {
   const n = Math.floor(windowSec * fs);
   const seg = (sig.length >= n) ? Array.from(sig.slice(-n)) : Array.from(sig);
   if (seg.length < 2) {
     return { baseline: 0, method: 'empty',
              typical_peak: 0, typical_trough: 0,
-             peak_bin: null, trough_bin: null,
+             peak_iqr: null, trough_iqr: null,
+             peak_fence: null, trough_fence: null,
              peak_count: 0, trough_count: 0,
-             peak_in_bin: 0, trough_in_bin: 0 };
+             peak_in_iqr: 0, trough_in_iqr: 0 };
   }
   const minDist = Math.max(Math.floor(MIN_BREATH_INTERVAL * fs), 1);
   const neg = seg.map(v => -v);
@@ -410,38 +422,45 @@ function robustBaselineAmplitude(sig, fs, windowSec, nBins=8, minPeaks=4) {
     for (const v of seg) { if (v > mx) mx = v; if (v < mn) mn = v; }
     return { baseline: mx - mn, method: 'fallback_maxmin',
              typical_peak: mx, typical_trough: mn,
-             peak_bin: null, trough_bin: null,
+             peak_iqr: null, trough_iqr: null,
+             peak_fence: null, trough_fence: null,
              peak_count: peaks.length, trough_count: troughs.length,
-             peak_in_bin: 0, trough_in_bin: 0 };
+             peak_in_iqr: 0, trough_in_iqr: 0 };
   }
-  function modalMean(values, bins) {
-    let mn = values[0], mx = values[0];
-    for (const v of values) { if (v < mn) mn = v; if (v > mx) mx = v; }
-    const w = (mx - mn) / bins;
-    const counts = new Array(bins).fill(0);
-    const safeW = w > 0 ? w : 1e-9;
-    for (const v of values) {
-      let b = Math.floor((v - mn) / safeW);
-      if (b >= bins) b = bins - 1;
-      if (b < 0) b = 0;
-      counts[b]++;
-    }
-    let best = 0, bestCount = -1;
-    for (let i = 0; i < bins; i++) if (counts[i] > bestCount) { bestCount = counts[i]; best = i; }
-    const low = mn + w * best, high = mn + w * (best + 1);
-    const inBin = values.filter(v => v >= low && v <= high + 1e-12);
-    const m = inBin.length ? mean(inBin) : mean(values);
-    return { mean: m, range: [low, high], count: inBin.length };
+
+  // Tukey-fence trimmed mean.
+  function tukeyTrimmedMean(values) {
+    const sorted = values.slice().sort((a, b) => a - b);
+    const N = sorted.length;
+    const half = Math.floor(N / 2);
+    // For even N: lower = first N/2, upper = last N/2.
+    // For odd  N: drop the middle element -- lower = first half, upper = last half.
+    const lower = sorted.slice(0, half);
+    const upper = sorted.slice(N - half);
+    const medianOf = arr => {
+      const m = Math.floor(arr.length / 2);
+      return arr.length % 2 ? arr[m] : (arr[m-1] + arr[m]) / 2;
+    };
+    const Q1 = medianOf(lower);
+    const Q3 = medianOf(upper);
+    const iqr = Q3 - Q1;
+    const lowFence  = Q1 - 1.5 * iqr;
+    const highFence = Q3 + 1.5 * iqr;
+    const kept = sorted.filter(v => v >= lowFence && v <= highFence);
+    const m = kept.length ? mean(kept) : mean(sorted);
+    return { mean: m, iqr: [Q1, Q3], fence: [lowFence, highFence], count: kept.length };
   }
-  const p = modalMean(peaks, nBins);
-  const t = modalMean(troughs, nBins);
+
+  const p = tukeyTrimmedMean(peaks);
+  const t = tukeyTrimmedMean(troughs);
   return {
     baseline: Math.max(0, p.mean - t.mean),
-    method: 'mode',
+    method: 'iqr',
     typical_peak: p.mean, typical_trough: t.mean,
-    peak_bin: p.range, trough_bin: t.range,
+    peak_iqr: p.iqr, trough_iqr: t.iqr,
+    peak_fence: p.fence, trough_fence: t.fence,
     peak_count: peaks.length, trough_count: troughs.length,
-    peak_in_bin: p.count, trough_in_bin: t.count
+    peak_in_iqr: p.count, trough_in_iqr: t.count
   };
 }
 
@@ -823,16 +842,17 @@ function mainTick() {
         time: now, value: segment_baseline, source: 'chest',
         method: info.method,
         typical_peak: info.typical_peak, typical_trough: info.typical_trough,
-        peak_bin: info.peak_bin, trough_bin: info.trough_bin,
+        peak_iqr: info.peak_iqr, trough_iqr: info.trough_iqr,
+        peak_fence: info.peak_fence, trough_fence: info.trough_fence,
         peak_count: info.peak_count, trough_count: info.trough_count,
-        peak_in_bin: info.peak_in_bin, trough_in_bin: info.trough_in_bin,
+        peak_in_iqr: info.peak_in_iqr, trough_in_iqr: info.trough_in_iqr,
         chest_width_px: locked_chest_size
       });
       const n = session.locked_baselines.length;
       log(`Segment #${n} baseline locked: ${segment_baseline.toFixed(4)} (${info.method})`, 'ok');
-      if (info.method === 'mode') {
-        log(`   peaks   mean=${info.typical_peak.toFixed(3)}  bin=[${info.peak_bin[0].toFixed(3)},${info.peak_bin[1].toFixed(3)}]  ${info.peak_in_bin}/${info.peak_count}`);
-        log(`   troughs mean=${info.typical_trough.toFixed(3)}  bin=[${info.trough_bin[0].toFixed(3)},${info.trough_bin[1].toFixed(3)}]  ${info.trough_in_bin}/${info.trough_count}`);
+      if (info.method === 'iqr') {
+        log(`   peaks   mean=${info.typical_peak.toFixed(3)}  Q1Q3=[${info.peak_iqr[0].toFixed(3)},${info.peak_iqr[1].toFixed(3)}]  fence=[${info.peak_fence[0].toFixed(3)},${info.peak_fence[1].toFixed(3)}]  kept ${info.peak_in_iqr}/${info.peak_count}`);
+        log(`   troughs mean=${info.typical_trough.toFixed(3)}  Q1Q3=[${info.trough_iqr[0].toFixed(3)},${info.trough_iqr[1].toFixed(3)}]  fence=[${info.trough_fence[0].toFixed(3)},${info.trough_fence[1].toFixed(3)}]  kept ${info.trough_in_iqr}/${info.trough_count}`);
       }
     }
     if (segment_baseline !== null) {
@@ -1217,9 +1237,9 @@ function renderResults(res) {
   ];
   const annotations2 = res.locked_baselines.map((lb, i) => {
     let text = `B#${i+1}=${lb.value.toFixed(3)}`;
-    if (lb.method === 'mode' && lb.peak_bin && lb.trough_bin) {
-      text += `<br>max: ${lb.typical_peak.toFixed(3)} [${lb.peak_bin[0].toFixed(3)}, ${lb.peak_bin[1].toFixed(3)}]`;
-      text += `<br>min: ${lb.typical_trough.toFixed(3)} [${lb.trough_bin[0].toFixed(3)}, ${lb.trough_bin[1].toFixed(3)}]`;
+    if (lb.method === 'iqr' && lb.peak_iqr && lb.trough_iqr) {
+      text += `<br>max: ${lb.typical_peak.toFixed(3)}   Q1Q3=[${lb.peak_iqr[0].toFixed(3)}, ${lb.peak_iqr[1].toFixed(3)}]`;
+      text += `<br>min: ${lb.typical_trough.toFixed(3)}   Q1Q3=[${lb.trough_iqr[0].toFixed(3)}, ${lb.trough_iqr[1].toFixed(3)}]`;
     }
     return {
       x: lb.time - res.t0, y: lb.value, text,
@@ -1279,9 +1299,15 @@ function renderResults(res) {
     d.className = 'segment-row';
     let html = `<strong>Segment #${i+1}</strong> &nbsp; baseline = <strong>${lb.value.toFixed(4)}</strong> ` +
                `&nbsp; method: ${lb.method} &nbsp; locked at t=${(lb.time-res.t0).toFixed(1)}s`;
-    if (lb.method === 'mode' && lb.peak_bin && lb.trough_bin) {
-      html += `<br>peaks:   mean=<strong>${lb.typical_peak.toFixed(3)}</strong> &nbsp; bin=[${lb.peak_bin[0].toFixed(3)}, ${lb.peak_bin[1].toFixed(3)}] &nbsp; (${lb.peak_in_bin}/${lb.peak_count} in bin)`;
-      html += `<br>troughs: mean=<strong>${lb.typical_trough.toFixed(3)}</strong> &nbsp; bin=[${lb.trough_bin[0].toFixed(3)}, ${lb.trough_bin[1].toFixed(3)}] &nbsp; (${lb.trough_in_bin}/${lb.trough_count} in bin)`;
+    if (lb.method === 'iqr' && lb.peak_iqr && lb.trough_iqr) {
+      html += `<br>peaks:   mean=<strong>${lb.typical_peak.toFixed(3)}</strong>` +
+              ` &nbsp; Q1–Q3=[${lb.peak_iqr[0].toFixed(3)}, ${lb.peak_iqr[1].toFixed(3)}]` +
+              ` &nbsp; Tukey fence=[${lb.peak_fence[0].toFixed(3)}, ${lb.peak_fence[1].toFixed(3)}]` +
+              ` &nbsp; kept ${lb.peak_in_iqr}/${lb.peak_count}`;
+      html += `<br>troughs: mean=<strong>${lb.typical_trough.toFixed(3)}</strong>` +
+              ` &nbsp; Q1–Q3=[${lb.trough_iqr[0].toFixed(3)}, ${lb.trough_iqr[1].toFixed(3)}]` +
+              ` &nbsp; Tukey fence=[${lb.trough_fence[0].toFixed(3)}, ${lb.trough_fence[1].toFixed(3)}]` +
+              ` &nbsp; kept ${lb.trough_in_iqr}/${lb.trough_count}`;
     } else if (lb.method === 'fallback_maxmin') {
       html += `<br>(fallback max-min — only peaks=${lb.peak_count} troughs=${lb.trough_count} detected)`;
     }
@@ -1331,9 +1357,10 @@ downloadBtn.addEventListener('click', () => {
       source: lb.source, method: lb.method,
       typical_peak: lb.typical_peak !== undefined ? Math.round(lb.typical_peak*10000)/10000 : null,
       typical_trough: lb.typical_trough !== undefined ? Math.round(lb.typical_trough*10000)/10000 : null,
-      peak_bin: lb.peak_bin,  trough_bin: lb.trough_bin,
+      peak_iqr:   lb.peak_iqr,   trough_iqr:   lb.trough_iqr,
+      peak_fence: lb.peak_fence, trough_fence: lb.trough_fence,
       peak_count: lb.peak_count, trough_count: lb.trough_count,
-      peak_in_bin: lb.peak_in_bin, trough_in_bin: lb.trough_in_bin,
+      peak_in_iqr: lb.peak_in_iqr, trough_in_iqr: lb.trough_in_iqr,
       chest_width_px: lb.chest_width_px
     }))
   };
