@@ -2,168 +2,136 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Sleep Apnea Screener</title>
-<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no" />
+<title>Vision rPPG — Best-ROI Heart Rate</title>
 <script type="module">
-  // Load MediaPipe Tasks Vision as ES module, then expose classes on window
-  // so the (non-module) main script below can access them.
-  import { PoseLandmarker, FilesetResolver }
+  import { FaceLandmarker, FilesetResolver }
     from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.10";
-  window._MP = { PoseLandmarker, FilesetResolver };
+  window._MP = { FaceLandmarker, FilesetResolver };
   window.dispatchEvent(new Event('mp-ready'));
 </script>
 <style>
-:root {
-  --bg: #ffffff;
-  --panel: #f6f8fa;
-  --panel2: #eaeef2;
-  --border: #d0d7de;
-  --text: #1f2328;
-  --muted: #656d76;
-  --good: #1a7f37;
-  --mid:  #9a6700;
-  --bad:  #cf222e;
-  --accent: #0969da;
-  --accent2: #bc4c00;
-  --purple: #8250df;
-}
-* { box-sizing: border-box; margin: 0; padding: 0; }
-html, body {
-  background: var(--bg); color: var(--text); min-height: 100vh;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  font-size: 14px;
-}
-.app { max-width: 900px; margin: 0 auto; padding: 12px; display: flex; flex-direction: column; gap: 12px; }
-h1 { font-size: 20px; font-weight: 600; text-align: center; }
-.disclaimer { font-size: 11px; color: var(--muted); text-align: center; padding: 0 16px; }
+  :root {
+    --bg: #0f1117;
+    --panel: #1a1d26;
+    --border: #2a2f3d;
+    --text: #e8eaef;
+    --muted: #8892a6;
+    --good: #4ade80;
+    --mid: #fbbf24;
+    --bad: #ef4444;
+    --accent: #60a5fa;
+    --accent2: #f97316;
+    --purple: #a855f7;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    background: var(--bg); color: var(--text); min-height: 100vh;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-size: 14px;
+  }
+  .app { max-width: 760px; margin: 0 auto; padding: 12px; display: flex; flex-direction: column; gap: 12px; }
+  h1 { font-size: 18px; font-weight: 600; text-align: center; }
+  .disclaimer { font-size: 11px; color: var(--muted); text-align: center; padding: 0 16px; }
+  .preview {
+    position: relative; background: #000;
+    border-radius: 12px; overflow: hidden; aspect-ratio: 4 / 3;
+  }
+  video, canvas#overlay {
+    width: 100%; height: 100%; object-fit: cover; display: block;
+    position: absolute; inset: 0;
+  }
+  canvas#overlay { pointer-events: none; }
+  .banner {
+    position: absolute; top: 0; left: 0; right: 0;
+    padding: 10px; font-weight: 700; font-size: 14px; text-align: center;
+    color: #fff; background: #444; transition: background 0.25s; z-index: 2;
+  }
+  .banner.idle      { background: #444; }
+  .banner.no_face   { background: #ef4444; }
+  .banner.warming   { background: #fbbf24; color: #000; }
+  .banner.measuring { background: #16a34a; }
+  .reason {
+    position: absolute; top: 40px; left: 0; right: 0;
+    padding: 4px 12px; font-size: 11px; color: #eee;
+    background: rgba(0,0,0,0.6); text-align: center; z-index: 2;
+  }
+  .timer-badge {
+    position: absolute; bottom: 8px; right: 8px; z-index: 2;
+    background: rgba(0,0,0,0.7); padding: 6px 12px;
+    border-radius: 8px; font-size: 18px; font-weight: 700;
+    color: var(--accent); font-variant-numeric: tabular-nums; letter-spacing: 1px;
+  }
+  .timer-badge.running { color: var(--good); }
+  .fps-badge {
+    position: absolute; bottom: 8px; left: 8px; z-index: 2;
+    background: rgba(0,0,0,0.7); padding: 4px 10px;
+    border-radius: 6px; font-size: 11px; color: #ccc;
+  }
+  .controls { display: flex; gap: 8px; }
+  button {
+    flex: 1; padding: 14px;
+    background: var(--accent); color: #000; border: none;
+    border-radius: 8px; font-size: 16px; font-weight: 700; cursor: pointer;
+  }
+  button.secondary { background: var(--panel); color: var(--text); border: 1px solid var(--border); }
+  button.danger { background: var(--bad); color: #fff; }
+  button:disabled { opacity: 0.4; }
+  .metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .metric {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 8px; padding: 10px 12px;
+  }
+  .metric .label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+  .metric .value { font-size: 22px; font-weight: 700; margin-top: 2px; font-variant-numeric: tabular-nums; }
+  .metric .sub { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .metric.wide { grid-column: 1 / -1; }
+  .panel {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 8px; padding: 10px;
+  }
+  .panel h3 {
+    font-size: 12px; font-weight: 500; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px;
+  }
+  canvas.chart { width: 100%; height: 120px; display: block; }
+  .roi-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 6px; }
+  .roi-card {
+    background: var(--bg); border: 1px solid var(--border);
+    border-radius: 6px; padding: 8px; font-size: 11px;
+  }
+  .roi-card.winner { border-color: var(--good); background: rgba(74,222,128,0.06); }
+  .roi-card .name { color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px; font-size: 10px; }
+  .roi-card .snr { font-size: 16px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .roi-card .algo { font-size: 10px; color: var(--muted); }
+  .roi-card.winner .algo { color: var(--good); }
+  .log {
+    font-size: 11px; color: var(--muted); max-height: 100px;
+    overflow-y: auto; font-family: ui-monospace, monospace; line-height: 1.4;
+  }
+  .warn { color: var(--mid); } .err { color: var(--bad); } .ok { color: var(--good); }
 
-.preview {
-  position: relative; background: #000;
-  border-radius: 12px; overflow: hidden; aspect-ratio: 4 / 3;
-}
-video, canvas#overlay {
-  width: 100%; height: 100%; object-fit: cover; display: block;
-  position: absolute; inset: 0;
-}
-canvas#overlay { pointer-events: none; }
-.banner {
-  position: absolute; top: 0; left: 0; right: 0;
-  padding: 10px; font-weight: 700; font-size: 14px; text-align: center;
-  color: #fff; background: #444; transition: background 0.25s; z-index: 2;
-}
-.banner.idle      { background: #444; }
-.banner.pose_lock { background: #fbbf24; color: #000; }
-.banner.monitor   { background: #16a34a; }
-.banner.warn      { background: #f97316; }
-.banner.err       { background: #ef4444; }
-.reason {
-  position: absolute; top: 40px; left: 0; right: 0;
-  padding: 4px 12px; font-size: 11px; color: #eee;
-  background: rgba(0,0,0,0.6); text-align: center; z-index: 2;
-}
-.timer-badge {
-  position: absolute; bottom: 8px; right: 8px; z-index: 2;
-  background: rgba(0,0,0,0.7); padding: 6px 12px;
-  border-radius: 8px; font-size: 18px; font-weight: 700;
-  color: var(--accent); font-variant-numeric: tabular-nums;
-}
-.timer-badge.running { color: var(--good); }
-.fps-badge {
-  position: absolute; bottom: 8px; left: 8px; z-index: 2;
-  background: rgba(0,0,0,0.7); padding: 4px 10px;
-  border-radius: 6px; font-size: 11px; color: #ccc;
-}
-
-.controls { display: flex; gap: 8px; }
-button {
-  flex: 1; padding: 14px;
-  background: var(--accent); color: #fff; border: none;
-  border-radius: 8px; font-size: 16px; font-weight: 700; cursor: pointer;
-}
-button.secondary { background: var(--panel); color: var(--text); border: 1px solid var(--border); }
-button.danger { background: var(--bad); color: #fff; }
-button:disabled { opacity: 0.4; cursor: not-allowed; }
-
-.metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
-.metric {
-  background: var(--panel); border: 1px solid var(--border);
-  border-radius: 8px; padding: 10px 12px;
-}
-.metric .label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
-.metric .value { font-size: 22px; font-weight: 700; margin-top: 2px; font-variant-numeric: tabular-nums; }
-.metric .sub   { font-size: 11px; color: var(--muted); margin-top: 2px; }
-
-.panel {
-  background: var(--panel); border: 1px solid var(--border);
-  border-radius: 8px; padding: 10px;
-}
-.panel h3 {
-  font-size: 12px; font-weight: 500; color: var(--muted);
-  text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px;
-}
-canvas.chart { width: 100%; height: 120px; display: block; background: var(--panel2); border-radius: 4px; border: 1px solid var(--border); }
-
-.log {
-  font-size: 11px; color: var(--muted); max-height: 140px;
-  overflow-y: auto; font-family: ui-monospace, monospace; line-height: 1.4;
-}
-.log .ok   { color: var(--good); }
-.log .warn { color: var(--mid); }
-.log .err  { color: var(--bad); }
-
-.results-wrap { display: none; }
-.results-wrap.show { display: flex; flex-direction: column; gap: 12px; }
-.plotly-graph { width: 100%; min-height: 280px; }
-
-.summary-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-.segment-row {
-  background: var(--panel2); border: 1px solid var(--border); border-radius: 6px;
-  padding: 8px 10px; margin-bottom: 6px;
-  font-family: ui-monospace, monospace; font-size: 11px; line-height: 1.5;
-}
-.segment-row strong { color: var(--accent); }
-
-.ahi-box {
-  padding: 14px; border-radius: 8px; text-align: center;
-  font-size: 14px; line-height: 1.6;
-}
-.ahi-box strong { font-size: 16px; }
-.ahi-box.normal       { background: rgba(74,222,128,0.10); border: 1px solid var(--good); color: var(--good); }
-.ahi-box.mild         { background: rgba(251,191,36,0.10); border: 1px solid var(--mid);  color: var(--mid);  }
-.ahi-box.moderate     { background: rgba(249,115,22,0.10); border: 1px solid var(--accent2); color: var(--accent2); }
-.ahi-box.severe       { background: rgba(239,68,68,0.10); border: 1px solid var(--bad);  color: var(--bad);  }
-.ahi-box.insufficient { background: var(--panel); border: 1px dashed var(--border); color: var(--muted); }
-.ahi-box .detail { font-size: 11px; color: var(--muted); margin-top: 4px; }
-.ahi-box.normal .detail, .ahi-box.mild .detail,
-.ahi-box.moderate .detail, .ahi-box.severe .detail { color: inherit; opacity: 0.85; }
-
-.ahi-scale {
-  display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px;
-  font-size: 11px; margin-top: 8px;
-}
-.ahi-scale > div {
-  padding: 6px 8px; border-radius: 6px;
-  border: 1px solid var(--border); background: var(--panel2);
-  text-align: center; color: var(--muted);
-}
-.ahi-scale > div.active { color: var(--text); font-weight: 700; }
-.ahi-scale > div.normal.active   { border-color: var(--good);    background: rgba(74,222,128,0.12); }
-.ahi-scale > div.mild.active     { border-color: var(--mid);     background: rgba(251,191,36,0.12); }
-.ahi-scale > div.moderate.active { border-color: var(--accent2); background: rgba(249,115,22,0.12); }
-.ahi-scale > div.severe.active   { border-color: var(--bad);     background: rgba(239,68,68,0.12); }
+  .results-wrap { display: none; }
+  .results-wrap.show { display: flex; flex-direction: column; gap: 12px; }
+  .results-header { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; }
+  .results-header h2 { font-size: 16px; }
+  .summary-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+  canvas.full-chart { width: 100%; display: block; background: #0a0c12; border-radius: 4px; }
+  .chart-caption { font-size: 11px; color: var(--muted); text-align: center; margin-top: 2px; }
+  .verdict { padding: 12px; border-radius: 8px; text-align: center; font-size: 13px; line-height: 1.5; }
+  .verdict.trust { background: rgba(74,222,128,0.1); border: 1px solid var(--good); color: var(--good); }
+  .verdict.marginal { background: rgba(251,191,36,0.1); border: 1px solid var(--mid); color: var(--mid); }
+  .verdict.bad { background: rgba(239,68,68,0.1); border: 1px solid var(--bad); color: var(--bad); }
 </style>
 </head>
 <body>
 <div class="app">
-  <h1>Sleep Apnea Screener</h1>
+  <h1>Vision rPPG — Best-ROI Heart Rate</h1>
   <div class="disclaimer">
-    Lie in front of the camera so your chest is in frame. A 60&nbsp;s warmup measures
-    your typical breathing, then the session monitors for apnea / hypopnea.
-    Screening tool only — not a medical device.
+    Sit ~50 cm from a well-lit camera. The app picks the strongest of forehead /
+    left cheek / right cheek and uses only that for HR. Screening only — not a medical device.
   </div>
 
-  <!-- ============ LIVE VIEW ============ -->
   <div id="liveView">
     <div class="preview">
       <video id="video" playsinline muted autoplay></video>
@@ -180,163 +148,162 @@ canvas.chart { width: 100%; height: 120px; display: block; background: var(--pan
     </div>
 
     <div class="metrics">
-      <div class="metric"><div class="label">Segment</div><div class="value" id="mSegment">--</div></div>
-      <div class="metric"><div class="label">Baseline</div><div class="value" id="mBaseline">--</div></div>
-      <div class="metric"><div class="label">Ratio</div><div class="value" id="mRatio">--</div><div class="sub" id="mZone">—</div></div>
-      <div class="metric"><div class="label">Re-locks</div><div class="value" id="mRelocks">0</div></div>
+      <div class="metric">
+        <div class="label">HR (live)</div>
+        <div class="value" id="hrLive">--</div>
+        <div class="sub" id="hrLiveSub">bpm</div>
+      </div>
+      <div class="metric">
+        <div class="label">Beats</div>
+        <div class="value" id="beatsCount">--</div>
+        <div class="sub">detected</div>
+      </div>
+      <div class="metric">
+        <div class="label">Mean IBI</div>
+        <div class="value" id="meanIbi">--</div>
+        <div class="sub">ms</div>
+      </div>
+      <div class="metric wide">
+        <div class="label">Winner ROI</div>
+        <div class="value" id="winnerName">--</div>
+        <div class="sub" id="winnerSub">SNR / algorithm</div>
+      </div>
     </div>
 
     <div class="panel">
-      <h3>Chest waveform (live)</h3>
+      <h3>Per-ROI Signal Quality</h3>
+      <div class="roi-row" id="roiRow">
+        <div class="roi-card" data-roi="forehead">
+          <div class="name">Forehead</div>
+          <div class="snr" id="snr_forehead">--</div>
+          <div class="algo" id="algo_forehead">-</div>
+        </div>
+        <div class="roi-card" data-roi="left_cheek">
+          <div class="name">Left Cheek</div>
+          <div class="snr" id="snr_left_cheek">--</div>
+          <div class="algo" id="algo_left_cheek">-</div>
+        </div>
+        <div class="roi-card" data-roi="right_cheek">
+          <div class="name">Right Cheek</div>
+          <div class="snr" id="snr_right_cheek">--</div>
+          <div class="algo" id="algo_right_cheek">-</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h3>Pulse waveform (winner ROI)</h3>
       <canvas id="waveChart" class="chart"></canvas>
     </div>
 
     <div class="panel">
       <h3>Log</h3>
-      <div id="log" class="log"></div>
+      <div class="log" id="log"></div>
     </div>
   </div>
 
-  <!-- ============ RESULTS VIEW ============ -->
   <div class="results-wrap" id="resultsView">
-    <div style="display:flex;justify-content:space-between;align-items:center;">
-      <h2 style="font-size:16px;">Session Results</h2>
+    <div class="results-header">
+      <h2>Session Results</h2>
       <button class="secondary" id="backBtn" style="flex:0 0 auto;padding:8px 14px;">New Session</button>
     </div>
-    <div class="panel">
-      <h3>AHI severity</h3>
-      <div class="ahi-box insufficient" id="ahiBox"></div>
-      <div class="ahi-scale" id="ahiScale">
-        <div class="normal">Normal<br><span style="opacity:0.7">&lt; 5/hr</span></div>
-        <div class="mild">Mild<br><span style="opacity:0.7">5 – 14.9</span></div>
-        <div class="moderate">Moderate<br><span style="opacity:0.7">15 – 29.9</span></div>
-        <div class="severe">Severe<br><span style="opacity:0.7">≥ 30</span></div>
-      </div>
-    </div>
+    <div class="verdict" id="verdict"></div>
     <div class="panel">
       <h3>Summary</h3>
       <div class="summary-grid" id="summaryGrid"></div>
     </div>
     <div class="panel">
-      <h3>1. Normalized amplitude (chest signal + inhales/exhales + events)</h3>
-      <div id="graph1" class="plotly-graph"></div>
-    </div>
-    <div class="panel">
-      <h3>2. Amplitude — baseline vs current, with zones</h3>
-      <div id="graph2" class="plotly-graph"></div>
-    </div>
-    <div class="panel">
-      <h3>3. Event timeline</h3>
-      <div id="graph3" class="plotly-graph" style="min-height:140px;"></div>
-    </div>
-    <div class="panel">
-      <h3>Per-segment baseline breakdown</h3>
-      <div id="segmentDetails"></div>
+      <h3>Panel 1 — Best-ROI pulse with beats</h3>
+      <canvas class="full-chart" id="chart1" height="260"></canvas>
+      <div class="chart-caption" id="caption1"></div>
     </div>
     <div class="controls">
       <button id="downloadJsonBtn" class="secondary">Download JSON</button>
     </div>
+    <div style="height:12px"></div>
   </div>
 </div>
 
 <script>
-"use strict";
+// ================== PARAMETERS (mirror hr_main.py) ==================
+const HR_LOW_HZ  = 0.67;          // 40 bpm
+const HR_HIGH_HZ = 3.0;           // 180 bpm
+const BUFFER_SEC = 30;
+const MIN_ANALYSIS_SEC = 6;
+const HR_WIN_SEC = 10;
+const POS_WIN_SEC = 1.6;
+const PEAK_MIN_PROMINENCE = 0.25;
+const PEAK_MIN_DIST_SEC   = 0.33;
+const BEAT_DEDUP_SEC      = 0.25;
+const BEAT_STABLE_DELAY_SEC = 0.6;
+const FILTER_WARMUP_SEC   = 2.0;
+const MIN_ROI_QUALITY     = 0.05;
+const SWITCH_COOLDOWN_SEC = 3.0;
+const SWITCH_ADVANTAGE    = 1.25;
+const HRV_MIN_BEATS       = 30;
 
-// ============ PARAMETERS (mirror of main.py) ============
-const PROCESS_FPS              = 10;
-const POSE_DETECT_SECONDS      = 15;
-const LOCK_CONSECUTIVE         = 10;
-const LOCK_VISIBILITY          = 0.75;
-const LOCK_STABILITY_PX        = 25;
-const MIN_VISIBILITY           = 0.5;
+// Same landmark groups as hr_main.py
+const LANDMARKS = {
+  forehead:    [10, 67, 69, 104, 108, 151, 337, 338, 299, 297],
+  left_cheek:  [205, 187, 123, 117, 118, 101, 36, 142],
+  right_cheek: [425, 411, 352, 346, 347, 330, 266, 371],
+};
+const ROI_NAMES = Object.keys(LANDMARKS);
+const ROI_COLORS = {
+  forehead:    '#fbbf24',
+  left_cheek:  '#60a5fa',
+  right_cheek: '#a855f7',
+};
 
-const TRACK_SHIFT_PX           = 60;
-const TRACK_SMOOTH_ALPHA       = 0.15;
-const RELOCK_GRACE_SEC         = 3;
-const ROI_SIZE_CHANGE_RATIO    = 0.30;
-const POSE_LOST_SEC            = 2.0;
-
-const BUFFER_SECONDS           = 120;
-const WARMUP_SECONDS           = 60;
-const MIN_BASELINE_SEC         = 5;
-const LOWPASS_CUTOFF           = 0.6;
-const HIGHPASS_CUTOFF          = 0.08;
-const MIN_BREATH_INTERVAL      = 1.0;
-const PEAK_MIN_ABS             = 0.08;
-
-const APNEA_AMPLITUDE_RATIO    = 0.20;   // ratio < 0.20 -> apnea    (>=80% drop)
-const HYPOPNEA_AMPLITUDE_RATIO = 0.50;   // ratio < 0.50 -> hypopnea (>=50% drop)
-const EVENT_MIN_DURATION       = 10.0;
-
-const CHEST_Y_START_FRAC       = 0.05;
-const CHEST_HEIGHT_FRAC        = 0.55;
-const SHRINK_FRAC              = 0.15;
-
-// MediaPipe landmark indices
-const LM_LEFT_SHOULDER  = 11;
-const LM_RIGHT_SHOULDER = 12;
-const LM_LEFT_HIP       = 23;
-const LM_RIGHT_HIP      = 24;
-
-// ============ DOM ============
-const videoEl       = document.getElementById('video');
-const overlayCanvas = document.getElementById('overlay');
-const overlayCtx    = overlayCanvas.getContext('2d');
-const hiddenCanvas  = document.createElement('canvas');
-const hiddenCtx     = hiddenCanvas.getContext('2d', { willReadFrequently: true });
-const bannerEl      = document.getElementById('banner');
-const reasonEl      = document.getElementById('reason');
-const fpsBadge      = document.getElementById('fpsBadge');
-const timerEl       = document.getElementById('timer');
-const startBtn      = document.getElementById('startBtn');
-const stopBtn       = document.getElementById('stopBtn');
-const backBtn       = document.getElementById('backBtn');
-const downloadBtn   = document.getElementById('downloadJsonBtn');
-const liveView      = document.getElementById('liveView');
-const resultsView   = document.getElementById('resultsView');
-const logEl         = document.getElementById('log');
-const waveCanvas    = document.getElementById('waveChart');
-const waveCtx       = waveCanvas.getContext('2d');
-
-const mSegment  = document.getElementById('mSegment');
-const mBaseline = document.getElementById('mBaseline');
-const mRatio    = document.getElementById('mRatio');
-const mZone     = document.getElementById('mZone');
-const mRelocks  = document.getElementById('mRelocks');
+// ================== ELEMENTS ==================
+const videoEl   = document.getElementById('video');
+const overlayEl = document.getElementById('overlay');
+const overlayCtx= overlayEl.getContext('2d');
+const bannerEl  = document.getElementById('banner');
+const reasonEl  = document.getElementById('reason');
+const timerEl   = document.getElementById('timer');
+const fpsBadge  = document.getElementById('fpsBadge');
+const startBtn  = document.getElementById('startBtn');
+const stopBtn   = document.getElementById('stopBtn');
+const backBtn   = document.getElementById('backBtn');
+const liveView  = document.getElementById('liveView');
+const resultsView = document.getElementById('resultsView');
+const hrLiveEl  = document.getElementById('hrLive');
+const hrLiveSub = document.getElementById('hrLiveSub');
+const beatsCountEl = document.getElementById('beatsCount');
+const meanIbiEl = document.getElementById('meanIbi');
+const winnerNameEl = document.getElementById('winnerName');
+const winnerSubEl  = document.getElementById('winnerSub');
+const waveCanvas = document.getElementById('waveChart');
+const waveCtx    = waveCanvas.getContext('2d');
+const logEl      = document.getElementById('log');
+const downloadJsonBtn = document.getElementById('downloadJsonBtn');
 
 function log(msg, cls='') {
   const line = document.createElement('div');
   if (cls) line.className = cls;
   line.textContent = new Date().toLocaleTimeString() + '  ' + msg;
   logEl.prepend(line);
-  while (logEl.children.length > 80) logEl.removeChild(logEl.lastChild);
-}
-function setBanner(state, text, reason='') {
-  bannerEl.className = 'banner ' + state;
-  bannerEl.textContent = text;
-  reasonEl.textContent = reason;
+  while (logEl.children.length > 40) logEl.removeChild(logEl.lastChild);
 }
 
-// ============ SIGNAL MATH ============
+// ================== SIGNAL MATH ==================
 function designBandpass(fs, low, high) {
-  // 2nd-order biquad bandpass (same structure as vision_hr_flash.html).
-  // Not identical to scipy's 3rd-order Butterworth but close enough in
-  // breathing band (0.08-0.6 Hz at 10 Hz) for the same graph shape.
-  const fc = Math.sqrt(low * high), bw = high - low;
+  const fc = Math.sqrt(low*high), bw = high - low;
   const Q = fc / bw;
-  const omega = 2 * Math.PI * fc / fs;
-  const alpha = Math.sin(omega) / (2 * Q);
-  const cosw  = Math.cos(omega);
+  const omega = 2*Math.PI*fc/fs;
+  const alpha = Math.sin(omega)/(2*Q);
+  const cosw = Math.cos(omega);
   const b0 = alpha, b1 = 0, b2 = -alpha;
-  const a0 = 1 + alpha, a1 = -2 * cosw, a2 = 1 - alpha;
-  return { b: [b0/a0, b1/a0, b2/a0], a: [1, a1/a0, a2/a0] };
+  const a0 = 1+alpha, a1 = -2*cosw, a2 = 1-alpha;
+  return { b:[b0/a0,b1/a0,b2/a0], a:[1,a1/a0,a2/a0] };
 }
-function filtForward(x, { b, a }) {
+function filtForward(x, {b,a}) {
   const y = new Float64Array(x.length);
   for (let n = 0; n < x.length; n++) {
-    let v = b[0] * x[n];
-    if (n >= 1) v += b[1] * x[n-1] - a[1] * y[n-1];
-    if (n >= 2) v += b[2] * x[n-2] - a[2] * y[n-2];
+    let v = b[0]*x[n];
+    if (n>=1) v += b[1]*x[n-1] - a[1]*y[n-1];
+    if (n>=2) v += b[2]*x[n-2] - a[2]*y[n-2];
     y[n] = v;
   }
   return y;
@@ -344,39 +311,81 @@ function filtForward(x, { b, a }) {
 function filtfilt(x, coef) {
   const f1 = filtForward(x, coef);
   const rev = new Float64Array(f1.length);
-  for (let i = 0; i < f1.length; i++) rev[i] = f1[f1.length - 1 - i];
+  for (let i = 0; i < f1.length; i++) rev[i] = f1[f1.length-1-i];
   const f2 = filtForward(rev, coef);
   const out = new Float64Array(f2.length);
-  for (let i = 0; i < f2.length; i++) out[i] = f2[f2.length - 1 - i];
+  for (let i = 0; i < f2.length; i++) out[i] = f2[f2.length-1-i];
   return out;
 }
-function mean(arr) { let s = 0; for (let i = 0; i < arr.length; i++) s += arr[i]; return arr.length ? s / arr.length : 0; }
-function stdev(arr) {
-  const m = mean(arr); let v = 0;
-  for (let i = 0; i < arr.length; i++) v += (arr[i]-m)*(arr[i]-m);
-  return Math.sqrt(v / Math.max(arr.length, 1));
-}
-function rollingAmplitude(sig, fs, windowSec) {
-  const n = Math.floor(windowSec * fs);
-  if (sig.length < 2) return 0;
-  const start = Math.max(0, sig.length - n);
-  let mx = sig[start], mn = sig[start];
-  for (let i = start + 1; i < sig.length; i++) {
-    if (sig[i] > mx) mx = sig[i];
-    if (sig[i] < mn) mn = sig[i];
-  }
-  return mx - mn;
-}
-// Peak detection
-function findPeaks(signal, minDist, minProm) {
-  const peaks = [];
+function fftMag(signal, fs) {
   const N = signal.length;
+  let mean = 0;
+  for (let i = 0; i < N; i++) mean += signal[i];
+  mean /= N;
+  const w = new Float64Array(N);
+  for (let i = 0; i < N; i++) {
+    const h = 0.54 - 0.46*Math.cos(2*Math.PI*i/(N-1));
+    w[i] = (signal[i]-mean)*h;
+  }
+  const bins = Math.floor(N/2)+1;
+  const re = new Float64Array(bins), im = new Float64Array(bins);
+  for (let k = 0; k < bins; k++) {
+    let sr=0, si=0; const c = -2*Math.PI*k/N;
+    for (let n = 0; n < N; n++) {
+      sr += w[n]*Math.cos(c*n);
+      si += w[n]*Math.sin(c*n);
+    }
+    re[k]=sr; im[k]=si;
+  }
+  const mag = new Float64Array(bins), freqs = new Float64Array(bins);
+  for (let k = 0; k < bins; k++) {
+    mag[k] = Math.sqrt(re[k]*re[k] + im[k]*im[k]);
+    freqs[k] = k*fs/N;
+  }
+  return { mag, freqs };
+}
+function estimateHrFft(signal, fs) {
+  if (signal.length < fs*3) return { hr:0, confidence:0 };
+  const { mag, freqs } = fftMag(signal, fs);
+  let peakIdx=-1, peakVal=-1, total=0;
+  for (let k = 0; k < mag.length; k++) {
+    if (freqs[k] >= HR_LOW_HZ && freqs[k] <= HR_HIGH_HZ) {
+      total += mag[k];
+      if (mag[k] > peakVal) { peakVal = mag[k]; peakIdx = k; }
+    }
+  }
+  if (peakIdx < 0) return { hr:0, confidence:0 };
+  let frac = 0;
+  if (peakIdx > 0 && peakIdx < mag.length-1) {
+    const y0=mag[peakIdx-1], y1=mag[peakIdx], y2=mag[peakIdx+1];
+    const d = y0 - 2*y1 + y2;
+    if (Math.abs(d) > 1e-12) frac = 0.5*(y0-y2)/d;
+  }
+  const binHz = freqs[1]-freqs[0];
+  const refined = freqs[peakIdx] + frac*binHz;
+  const hr = Math.max(HR_LOW_HZ*60, Math.min(HR_HIGH_HZ*60, refined*60));
+  const conf = Math.min(1, (peakVal/(total+1e-9))*4);
+  return { hr, confidence: conf };
+}
+function signalSnr(signal, fs) {
+  if (signal.length < fs*3) return 0;
+  const { mag, freqs } = fftMag(signal, fs);
+  let peak=0, total=0;
+  for (let k = 0; k < mag.length; k++) {
+    const p = mag[k]*mag[k];
+    total += p;
+    if (freqs[k] >= HR_LOW_HZ && freqs[k] <= HR_HIGH_HZ && p > peak) peak = p;
+  }
+  return peak/(total+1e-9);
+}
+function findPeaks(signal, minDist, minProm) {
+  const peaks = []; const N = signal.length;
   for (let i = 1; i < N-1; i++) {
     if (signal[i] > signal[i-1] && signal[i] > signal[i+1]) {
       let lmin = signal[i], rmin = signal[i];
-      const lS = Math.max(0, i - minDist), rE = Math.min(N-1, i + minDist);
-      for (let j = i-1; j >= lS; j--) { if (signal[j] > signal[i]) break; if (signal[j] < lmin) lmin = signal[j]; }
-      for (let j = i+1; j <= rE; j++) { if (signal[j] > signal[i]) break; if (signal[j] < rmin) rmin = signal[j]; }
+      const lS = Math.max(0, i-minDist), rE = Math.min(N-1, i+minDist);
+      for (let j = i-1; j >= lS; j--) { if (signal[j]>signal[i]) break; if (signal[j]<lmin) lmin=signal[j]; }
+      for (let j = i+1; j <= rE; j++) { if (signal[j]>signal[i]) break; if (signal[j]<rmin) rmin=signal[j]; }
       const prom = signal[i] - Math.max(lmin, rmin);
       if (prom >= minProm) {
         if (peaks.length === 0 || (i - peaks[peaks.length-1]) >= minDist) peaks.push(i);
@@ -387,1006 +396,983 @@ function findPeaks(signal, minDist, minProm) {
   return peaks;
 }
 
-// IQR (Tukey fence) baseline.
-//  1. Detect all peaks (inhale tops) and troughs (exhale bottoms) in the
-//     last `windowSec` of the filtered signal.
-//  2. Sort peaks. Split into lower/upper halves.
-//     Q1 = median(lower half),  Q3 = median(upper half),  IQR = Q3 - Q1.
-//  3. Keep values within the Tukey fence [Q1 - 1.5*IQR, Q3 + 1.5*IQR].
-//     Anything outside that fence is a statistical outlier -- discarded.
-//  4. typical_peak = mean(kept peaks).   typical_trough = mean(kept troughs).
-//  5. baseline = typical_peak - typical_trough.
-//
-// Falls back to plain max-min if fewer than `minPeaks` peaks or troughs
-// are found (not enough data for IQR to be meaningful).
-function robustBaselineAmplitude(sig, fs, windowSec, minPeaks=4) {
-  const n = Math.floor(windowSec * fs);
-  const seg = (sig.length >= n) ? Array.from(sig.slice(-n)) : Array.from(sig);
-  if (seg.length < 2) {
-    return { baseline: 0, method: 'empty',
-             typical_peak: 0, typical_trough: 0,
-             peak_iqr: null, trough_iqr: null,
-             peak_fence: null, trough_fence: null,
-             peak_count: 0, trough_count: 0,
-             peak_in_iqr: 0, trough_in_iqr: 0 };
+// POS algorithm (Wang 2017): motion-robust pulse extraction from RGB.
+// rgb is [N, 3] (R,G,B columns). Returns Float64Array of length N.
+function posAlgorithm(rgb, fs) {
+  const N = rgb.length;
+  const win = Math.floor(POS_WIN_SEC * fs);
+  const H = new Float64Array(N);
+  if (N < win + 1) {
+    let m = 0;
+    for (let i = 0; i < N; i++) m += rgb[i][1];
+    m /= N;
+    for (let i = 0; i < N; i++) H[i] = rgb[i][1] - m;
+    return H;
   }
-  const minDist = Math.max(Math.floor(MIN_BREATH_INTERVAL * fs), 1);
-  const neg = seg.map(v => -v);
-  const peakIdx = findPeaks(seg, minDist, PEAK_MIN_ABS);
-  const troughIdx = findPeaks(neg, minDist, PEAK_MIN_ABS);
-  const peaks = peakIdx.map(i => seg[i]);
-  const troughs = troughIdx.map(i => seg[i]);
-
-  if (peaks.length < minPeaks || troughs.length < minPeaks) {
-    let mx = seg[0], mn = seg[0];
-    for (const v of seg) { if (v > mx) mx = v; if (v < mn) mn = v; }
-    return { baseline: mx - mn, method: 'fallback_maxmin',
-             typical_peak: mx, typical_trough: mn,
-             peak_iqr: null, trough_iqr: null,
-             peak_fence: null, trough_fence: null,
-             peak_count: peaks.length, trough_count: troughs.length,
-             peak_in_iqr: 0, trough_in_iqr: 0 };
+  for (let n = win; n < N; n++) {
+    let muR = 0, muG = 0, muB = 0;
+    for (let k = n-win; k < n; k++) { muR += rgb[k][0]; muG += rgb[k][1]; muB += rgb[k][2]; }
+    muR /= win; muG /= win; muB /= win;
+    const S1 = new Float64Array(win);
+    const S2 = new Float64Array(win);
+    for (let k = 0; k < win; k++) {
+      const j = n-win+k;
+      const Rn = rgb[j][0] / (muR + 1e-9);
+      const Gn = rgb[j][1] / (muG + 1e-9);
+      const Bn = rgb[j][2] / (muB + 1e-9);
+      S1[k] = Gn - Bn;
+      S2[k] = Gn + Bn - 2*Rn;
+    }
+    let m1 = 0, m2 = 0;
+    for (let k = 0; k < win; k++) { m1 += S1[k]; m2 += S2[k]; }
+    m1 /= win; m2 /= win;
+    let s1 = 0, s2 = 0;
+    for (let k = 0; k < win; k++) { s1 += (S1[k]-m1)*(S1[k]-m1); s2 += (S2[k]-m2)*(S2[k]-m2); }
+    const std1 = Math.sqrt(s1/win), std2 = Math.sqrt(s2/win);
+    const alpha = std1 / (std2 + 1e-9);
+    let hMean = 0;
+    const h = new Float64Array(win);
+    for (let k = 0; k < win; k++) { h[k] = S1[k] + alpha*S2[k]; hMean += h[k]; }
+    hMean /= win;
+    for (let k = 0; k < win; k++) H[n-win+k] += h[k] - hMean;
   }
+  return H;
+}
 
-  // Tukey-fence trimmed mean.
-  function tukeyTrimmedMean(values) {
-    const sorted = values.slice().sort((a, b) => a - b);
-    const N = sorted.length;
-    const half = Math.floor(N / 2);
-    // For even N: lower = first N/2, upper = last N/2.
-    // For odd  N: drop the middle element -- lower = first half, upper = last half.
-    const lower = sorted.slice(0, half);
-    const upper = sorted.slice(N - half);
-    const medianOf = arr => {
-      const m = Math.floor(arr.length / 2);
-      return arr.length % 2 ? arr[m] : (arr[m-1] + arr[m]) / 2;
-    };
-    const Q1 = medianOf(lower);
-    const Q3 = medianOf(upper);
-    const iqr = Q3 - Q1;
-    const lowFence  = Q1 - 1.5 * iqr;
-    const highFence = Q3 + 1.5 * iqr;
-    const kept = sorted.filter(v => v >= lowFence && v <= highFence);
-    const m = kept.length ? mean(kept) : mean(sorted);
-    return { mean: m, iqr: [Q1, Q3], fence: [lowFence, highFence], count: kept.length };
+function computeHrv(ibisMs) {
+  if (ibisMs.length < 3) return null;
+  let ibis = ibisMs.filter(v => v > 300 && v < 1500);
+  if (ibis.length < 3) return null;
+  const mean = ibis.reduce((a,b)=>a+b)/ibis.length;
+  let vr = 0;
+  for (const v of ibis) vr += (v-mean)*(v-mean);
+  const sdnn = Math.sqrt(vr/ibis.length);
+  let sumSq=0, n=0, nn50=0;
+  for (let i = 1; i < ibis.length; i++) {
+    const d = ibis[i]-ibis[i-1];
+    sumSq += d*d; n++;
+    if (Math.abs(d) > 50) nn50++;
   }
-
-  const p = tukeyTrimmedMean(peaks);
-  const t = tukeyTrimmedMean(troughs);
   return {
-    baseline: Math.max(0, p.mean - t.mean),
-    method: 'iqr',
-    typical_peak: p.mean, typical_trough: t.mean,
-    peak_iqr: p.iqr, trough_iqr: t.iqr,
-    peak_fence: p.fence, trough_fence: t.fence,
-    peak_count: peaks.length, trough_count: troughs.length,
-    peak_in_iqr: p.count, trough_in_iqr: t.count
+    beats_used: ibis.length,
+    mean_hr_bpm: 60000/mean,
+    min_hr_bpm: 60000/Math.max(...ibis),
+    max_hr_bpm: 60000/Math.min(...ibis),
+    sdnn_ms: sdnn,
+    rmssd_ms: n>0 ? Math.sqrt(sumSq/n) : 0,
+    pnn50_pct: n>0 ? 100*nn50/n : 0,
   };
 }
 
-// Offline event detection (mirror of Python detect_events_offline)
-function detectEventsOffline(times, currents, baselines) {
-  const n = times.length;
-  if (n === 0) return [];
-  const valid = new Array(n);
-  const ratio = new Array(n);
-  for (let i = 0; i < n; i++) {
-    valid[i] = baselines[i] > 1e-6;
-    ratio[i] = valid[i] ? currents[i] / baselines[i] : 1;
+// ================== BEAT STORE ==================
+class BeatStore {
+  constructor(tol=BEAT_DEDUP_SEC) { this.times = []; this.tol = tol; }
+  add(t) {
+    if (!this.times.length) { this.times.push(t); return; }
+    let lo=0, hi=this.times.length;
+    while (lo < hi) { const m = (lo+hi)>>1; if (this.times[m] < t) lo = m+1; else hi = m; }
+    if (lo > 0 && (t - this.times[lo-1]) < this.tol) return;
+    if (lo < this.times.length && (this.times[lo] - t) < this.tol) return;
+    this.times.splice(lo, 0, t);
   }
-  const belowHypo  = new Array(n);
-  const belowApnea = new Array(n);
-  for (let i = 0; i < n; i++) {
-    belowHypo[i]  = valid[i] && ratio[i] < HYPOPNEA_AMPLITUDE_RATIO;
-    belowApnea[i] = valid[i] && ratio[i] < APNEA_AMPLITUDE_RATIO;
+  clear() { this.times = []; }
+}
+
+// ================== ROI SIGNAL ==================
+class RoiSignal {
+  constructor(name) {
+    this.name = name;
+    this.rgbBuf = []; this.timeBuf = [];
+    this.fullRgb = []; this.fullT = [];
+    this.lastFiltered = null;
+    this.lastSnr = 0; this.lastSnrGreen = 0; this.lastSnrPos = 0;
+    this.lastAlgo = null;
   }
-  const events = [];
-  let i = 0;
-  while (i < n) {
-    if (!belowHypo[i]) { i++; continue; }
-    let j = i;
-    while (j < n && belowHypo[j]) j++;
-    const dur = times[j-1] - times[i];
-    if (dur < EVENT_MIN_DURATION) { i = j; continue; }
-    let isApnea = false;
-    let k = i;
-    while (k < j) {
-      if (belowApnea[k]) {
-        let m = k;
-        while (m < j && belowApnea[m]) m++;
-        if (times[m-1] - times[k] >= EVENT_MIN_DURATION) { isApnea = true; break; }
-        k = m;
-      } else k++;
+  addSample(rgb, t) {
+    if (!rgb) return;
+    this.rgbBuf.push(rgb); this.timeBuf.push(t);
+    this.fullRgb.push(rgb); this.fullT.push(t);
+  }
+  trim(bufferSec) {
+    while (this.timeBuf.length > 1 &&
+           (this.timeBuf[this.timeBuf.length-1] - this.timeBuf[0]) > bufferSec) {
+      this.rgbBuf.shift(); this.timeBuf.shift();
     }
-    let minR = Infinity;
-    for (let p = i; p < j; p++) if (ratio[p] < minR) minR = ratio[p];
-    events.push({
-      start: times[i], end: times[j-1], duration: dur,
-      type: isApnea ? 'apnea' : 'hypopnea',
-      min_amplitude_ratio: Math.round(minR * 1000) / 1000,
-      note: isApnea ? null : 'Suspected hypopnea - SpO2 confirmation unavailable'
-    });
-    i = j;
   }
-  return events;
+  process(fs) {
+    if (this.rgbBuf.length < Math.floor(MIN_ANALYSIS_SEC * fs)) {
+      this.lastFiltered = null; this.lastSnr = 0; this.lastAlgo = null;
+      return null;
+    }
+    const N = this.rgbBuf.length;
+
+    // GREEN-only
+    let greenFilt = null, greenSnr = 0;
+    try {
+      const green = new Float64Array(N);
+      let mG = 0;
+      for (let i = 0; i < N; i++) mG += this.rgbBuf[i][1];
+      mG /= N;
+      for (let i = 0; i < N; i++) green[i] = this.rgbBuf[i][1] - mG;
+      const coef = designBandpass(fs, HR_LOW_HZ, HR_HIGH_HZ);
+      greenFilt = filtfilt(green, coef);
+      greenSnr  = signalSnr(greenFilt, fs);
+    } catch(e) { greenFilt = null; greenSnr = 0; }
+
+    // POS
+    let posFilt = null, posSnr = 0;
+    try {
+      const posSig = posAlgorithm(this.rgbBuf, fs);
+      const coef = designBandpass(fs, HR_LOW_HZ, HR_HIGH_HZ);
+      posFilt = filtfilt(posSig, coef);
+      posSnr  = signalSnr(posFilt, fs);
+    } catch(e) { posFilt = null; posSnr = 0; }
+
+    this.lastSnrGreen = greenSnr;
+    this.lastSnrPos   = posSnr;
+
+    if (!greenFilt && !posFilt) {
+      this.lastFiltered = null; this.lastSnr = 0; this.lastAlgo = null;
+      return null;
+    }
+    if (greenSnr >= posSnr && greenFilt) {
+      this.lastFiltered = greenFilt; this.lastSnr = greenSnr; this.lastAlgo = "green";
+    } else {
+      this.lastFiltered = posFilt; this.lastSnr = posSnr; this.lastAlgo = "pos";
+    }
+    return this.lastFiltered;
+  }
 }
 
-// ============ ROI HELPERS ============
-function computeChestRoi(lm, W, H) {
-  const ls = lm[LM_LEFT_SHOULDER], rs = lm[LM_RIGHT_SHOULDER];
-  const lh = lm[LM_LEFT_HIP],      rh = lm[LM_RIGHT_HIP];
-  const shoulderConf = Math.min(ls.visibility ?? 1, rs.visibility ?? 1);
-  if (shoulderConf < MIN_VISIBILITY) return { chest: null, conf: shoulderConf };
-  const x1 = Math.round(ls.x * W), y1 = Math.round(ls.y * H);
-  const x2 = Math.round(rs.x * W), y2 = Math.round(rs.y * H);
-  const shoulderY = Math.round((y1 + y2) / 2);
-  const hipsVisible = Math.min(lh.visibility ?? 0, rh.visibility ?? 0) >= MIN_VISIBILITY;
-  const hipY = hipsVisible
-    ? Math.round(((lh.y + rh.y) / 2) * H)
-    : shoulderY + Math.round(Math.abs(x2 - x1) * 1.2);
-  const dist = hipY - shoulderY;
-  if (dist <= 0) return { chest: null, conf: shoulderConf };
-  let x = Math.min(x1, x2), w = Math.abs(x2 - x1);
-  let y = shoulderY + Math.round(CHEST_Y_START_FRAC * dist);
-  let h = Math.round(CHEST_HEIGHT_FRAC * dist);
-  const shrink = Math.round(w * SHRINK_FRAC);
-  x += shrink; w -= 2 * shrink;
-  x = Math.max(0, x); y = Math.max(0, y);
-  w = Math.max(10, Math.min(w, W - x));
-  h = Math.max(10, Math.min(h, H - y));
-  return { chest: [x, y, w, h], conf: shoulderConf };
-}
-function roiCenter(r)   { return [r[0] + r[2]/2, r[1] + r[3]/2]; }
-function roiDistance(a, b) {
-  if (!a || !b) return 0;
-  const ca = roiCenter(a), cb = roiCenter(b);
-  return Math.hypot(ca[0]-cb[0], ca[1]-cb[1]);
-}
-function emaRoi(newR, oldR, alpha) {
-  if (!oldR) return newR;
-  if (!newR) return oldR;
-  return newR.map((n, i) => Math.round(alpha * n + (1 - alpha) * oldR[i]));
-}
-function roiMeanIntensity(ctx, roi, W, H) {
-  const [x, y, w, h] = roi;
-  if (w <= 0 || h <= 0) return 0;
-  const xc = Math.max(0, Math.min(x, W-1));
-  const yc = Math.max(0, Math.min(y, H-1));
-  const wc = Math.min(w, W - xc);
-  const hc = Math.min(h, H - yc);
-  if (wc <= 0 || hc <= 0) return 0;
-  const data = ctx.getImageData(xc, yc, wc, hc).data;
-  let s = 0; const px = wc * hc;
-  for (let i = 0; i < data.length; i += 4) {
-    s += 0.299 * data[i] + 0.587 * data[i+1] + 0.114 * data[i+2];
+// ================== BEST ROI SELECTOR ==================
+class BestRoiSelector {
+  constructor() { this.current = null; this.lastSwitch = 0; }
+  select(rois, now) {
+    const usable = {};
+    for (const name of ROI_NAMES) {
+      if (rois[name].lastSnr >= MIN_ROI_QUALITY) usable[name] = rois[name].lastSnr;
+    }
+    const names = Object.keys(usable);
+    if (!names.length) { this.current = null; return { name: null, snr: 0 }; }
+    let bestName = names[0], bestSnr = usable[bestName];
+    for (const n of names) if (usable[n] > bestSnr) { bestName = n; bestSnr = usable[n]; }
+
+    if (this.current === null) {
+      this.current = bestName; this.lastSwitch = now;
+      return { name: bestName, snr: bestSnr };
+    }
+    if (this.current in usable) {
+      const curSnr = usable[this.current];
+      if (bestName !== this.current &&
+          bestSnr > curSnr * SWITCH_ADVANTAGE &&
+          (now - this.lastSwitch) > SWITCH_COOLDOWN_SEC) {
+        this.current = bestName; this.lastSwitch = now;
+        return { name: bestName, snr: bestSnr };
+      }
+      return { name: this.current, snr: curSnr };
+    }
+    this.current = bestName; this.lastSwitch = now;
+    return { name: bestName, snr: bestSnr };
   }
-  return s / px;
+  clear() { this.current = null; this.lastSwitch = 0; }
 }
 
-// ============ MEDIAPIPE POSE ============
-let poseLandmarker = null;
-async function ensurePose() {
-  if (poseLandmarker) return poseLandmarker;
-  if (!window._MP) {
-    await new Promise((resolve, reject) => {
-      const t0 = performance.now();
-      const tick = () => {
-        if (window._MP) return resolve();
-        if (performance.now() - t0 > 15000) return reject(new Error('MediaPipe failed to load'));
-        setTimeout(tick, 100);
-      };
-      tick();
-    });
-  }
-  log('Loading MediaPipe Pose model…');
-  const { PoseLandmarker, FilesetResolver } = window._MP;
-  const vision = await FilesetResolver.forVisionTasks(
-    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.10/wasm"
-  );
-  poseLandmarker = await PoseLandmarker.createFromOptions(vision, {
-    baseOptions: {
-      modelAssetPath: "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task",
-      delegate: "GPU"
-    },
-    runningMode: "VIDEO",
-    numPoses: 1
-  });
-  log('Pose model ready', 'ok');
-  return poseLandmarker;
-}
-
-// ============ STATE ============
+// ================== STATE ==================
 let running = false;
 let stream = null;
+let hiddenCanvas = document.createElement('canvas');
+let hiddenCtx = hiddenCanvas.getContext('2d', { willReadFrequently: true });
+let fpsSamples = [];
+let measuredFps = 30;
+let lastFrameT = null;
 let sessionStart = 0;
 let timerInterval = null;
+let lastProcessT = 0;
+let lastBeatScan = 0;
 
-let session = null;
-function newSession() {
-  session = {
-    times: [],
-    chest_signal: [],
-    chest_filtered: [],
-    baseline: [],
-    current: [],
-    relock_times: [],
-    locked_baselines: [],
-    events: [],
-    inhales: [],
-    exhales: [],
-  };
-}
+let faceLandmarker = null;
+let mpReady = false;
+const rois = Object.fromEntries(ROI_NAMES.map(n => [n, new RoiSignal(n)]));
+const smoothBoxes = Object.fromEntries(ROI_NAMES.map(n => [n, null]));
+const selector = new BestRoiSelector();
+const beats = new BeatStore();
+let liveHr = 0, liveConf = 0, liveMethod = '-';
+let lastSessionResults = null;
+let winnerHistory = []; // [t, name]
+let estimatorState = 'no_face';
 
-let tracked_chest = null;
-let chest_buf = [];
-let segment_baseline = null;
-let locked_chest_size = null;
-let pose_lost_count = 0;
-const POSE_LOST_FRAMES = Math.floor(POSE_LOST_SEC * PROCESS_FPS);
-let relocking = false;
-let relock_end_t = 0;
-
-let nextT = 0;
-let fpsFrames = 0, fpsLast = performance.now();
-let measuredFps = 0;
-
-// ============ TIMER ============
+// ================== TIMER ==================
 function startTimer() {
   timerEl.classList.add('running');
   timerInterval = setInterval(() => {
-    const el = Math.floor(performance.now()/1000 - sessionStart);
+    const el = Math.floor((performance.now()/1000) - sessionStart);
     const mm = String(Math.floor(el/60)).padStart(2,'0');
     const ss = String(el%60).padStart(2,'0');
     timerEl.textContent = `${mm}:${ss}`;
   }, 250);
 }
 function stopTimer() { timerEl.classList.remove('running'); if (timerInterval) clearInterval(timerInterval); }
+function resetTimer() { timerEl.textContent = '00:00'; }
 
-// ============ CAMERA ============
+// ================== MEDIAPIPE ==================
+async function initFaceLandmarker() {
+  if (faceLandmarker) return;
+  const { FaceLandmarker, FilesetResolver } = window._MP;
+  const fileset = await FilesetResolver.forVisionTasks(
+    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.10/wasm"
+  );
+  faceLandmarker = await FaceLandmarker.createFromOptions(fileset, {
+    baseOptions: {
+      modelAssetPath: "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
+      delegate: "GPU"
+    },
+    runningMode: "VIDEO",
+    numFaces: 1,
+    outputFaceBlendshapes: false,
+    outputFacialTransformationMatrixes: false,
+  });
+  log('Face landmarker ready', 'ok');
+}
+
+// ================== CAMERA ==================
 async function startCamera() {
   try {
-    stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: { ideal: 'user' }, width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 30 } },
+    const constraints = {
+      video: {
+        facingMode: { ideal: 'user' },
+        width:  { ideal: 640 },
+        height: { ideal: 480 },
+        frameRate: { ideal: 30 }
+      },
       audio: false
-    });
+    };
+    stream = await navigator.mediaDevices.getUserMedia(constraints);
     videoEl.srcObject = stream;
     await videoEl.play();
     log('Camera started', 'ok');
     return true;
-  } catch (e) {
+  } catch(e) {
     log('Camera error: ' + e.message, 'err');
-    setBanner('err', 'Camera error', e.message);
     return false;
   }
 }
 function stopCamera() {
-  if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
-}
-
-// ============ OVERLAY DRAW ============
-function drawOverlay(pose_is_lost) {
-  const W = videoEl.videoWidth, H = videoEl.videoHeight;
-  if (!W || !H) return;
-  if (overlayCanvas.width !== W || overlayCanvas.height !== H) {
-    overlayCanvas.width = W; overlayCanvas.height = H;
+  if (stream) {
+    stream.getTracks().forEach(t => t.stop());
+    stream = null;
   }
-  overlayCtx.clearRect(0, 0, W, H);
-  if (pose_is_lost) {
-    overlayCtx.fillStyle = 'rgba(239,68,68,0.15)';
-    overlayCtx.fillRect(0, 0, W, H);
-    overlayCtx.fillStyle = '#ef4444';
-    overlayCtx.font = 'bold 28px sans-serif';
-    overlayCtx.fillText('OUT OF VIEW', 20, 50);
-    return;
+}
+
+// ================== ROI BBOX FROM LANDMARKS ==================
+function polygonBbox(landmarks, indices, w, h, shrink=0.12) {
+  let xMin = Infinity, yMin = Infinity, xMax = -Infinity, yMax = -Infinity;
+  for (const i of indices) {
+    const p = landmarks[i];
+    if (!p) continue;
+    const x = p.x * w, y = p.y * h;
+    if (x < xMin) xMin = x; if (x > xMax) xMax = x;
+    if (y < yMin) yMin = y; if (y > yMax) yMax = y;
   }
-  if (!tracked_chest) return;
-  const [x, y, w, h] = tracked_chest;
-  overlayCtx.strokeStyle = relocking ? '#fbbf24'
-                         : segment_baseline !== null ? '#4ade80' : '#60a5fa';
-  overlayCtx.lineWidth = 3;
-  overlayCtx.strokeRect(x, y, w, h);
-  overlayCtx.fillStyle = overlayCtx.strokeStyle;
-  overlayCtx.font = 'bold 14px sans-serif';
-  const label = relocking ? 'CHEST (re-locking…)'
-              : segment_baseline !== null ? 'CHEST'
-              : 'CHEST (warmup)';
-  overlayCtx.fillText(label, x, Math.max(18, y - 6));
+  if (!isFinite(xMin)) return null;
+  let bw = xMax - xMin, bh = yMax - yMin;
+  const sx = bw*shrink, sy = bh*shrink;
+  xMin += sx; yMin += sy; xMax -= sx; yMax -= sy;
+  if (xMax-xMin < 5 || yMax-yMin < 5) return null;
+  return { x: Math.round(xMin), y: Math.round(yMin),
+           w: Math.round(xMax-xMin), h: Math.round(yMax-yMin) };
 }
-
-// ============ LIVE WAVEFORM ============
-function drawLiveWaveform(chest_f) {
-  const W = waveCanvas.clientWidth, H = waveCanvas.clientHeight;
-  if (waveCanvas.width !== W || waveCanvas.height !== H) { waveCanvas.width = W; waveCanvas.height = H; }
-  waveCtx.clearRect(0, 0, W, H);
-  waveCtx.fillStyle = '#eaeef2'; waveCtx.fillRect(0, 0, W, H);
-  waveCtx.strokeStyle = '#d0d7de';
-  waveCtx.beginPath(); waveCtx.moveTo(0, H/2); waveCtx.lineTo(W, H/2); waveCtx.stroke();
-  if (!chest_f || chest_f.length < 10) return;
-  const dispN = Math.min(chest_f.length, 30 * PROCESS_FPS);
-  const seg = chest_f.slice(chest_f.length - dispN);
-  const m = mean(seg);
-  const s = stdev(seg) + 1e-9;
-  let maxAbs = 0;
-  for (let i = 0; i < seg.length; i++) { const v = (seg[i]-m)/s; if (Math.abs(v) > maxAbs) maxAbs = Math.abs(v); }
-  if (maxAbs < 0.1) maxAbs = 1;
-  waveCtx.strokeStyle = '#1a7f37';
-  waveCtx.lineWidth = 1.4;
-  waveCtx.beginPath();
-  for (let i = 0; i < seg.length; i++) {
-    const v = (seg[i]-m)/s;
-    const x = (i/(seg.length-1))*W;
-    const y = H/2 - (v/maxAbs)*(H/2*0.85);
-    if (i === 0) waveCtx.moveTo(x,y); else waveCtx.lineTo(x,y);
+function emaBox(neu, old, alpha=0.4) {
+  if (!old) return neu;
+  if (!neu) return old;
+  return {
+    x: Math.round(alpha*neu.x + (1-alpha)*old.x),
+    y: Math.round(alpha*neu.y + (1-alpha)*old.y),
+    w: Math.round(alpha*neu.w + (1-alpha)*old.w),
+    h: Math.round(alpha*neu.h + (1-alpha)*old.h),
+  };
+}
+function meanRgbInBox(imgData, vw, box) {
+  const x1 = Math.max(0, box.x), y1 = Math.max(0, box.y);
+  const x2 = Math.min(vw, box.x + box.w), y2 = Math.min(imgData.height, box.y + box.h);
+  if (x2 <= x1 || y2 <= y1) return null;
+  let rSum=0, gSum=0, bSum=0, n=0;
+  const data = imgData.data;
+  for (let y = y1; y < y2; y++) {
+    let off = (y*vw + x1)*4;
+    for (let x = x1; x < x2; x++) {
+      rSum += data[off]; gSum += data[off+1]; bSum += data[off+2];
+      off += 4; n++;
+    }
   }
-  waveCtx.stroke();
+  if (!n) return null;
+  return [rSum/n, gSum/n, bSum/n];
 }
 
-// ============ CORE TICK ============
-function triggerRelock(now, reason) {
-  log(`${reason} → re-locking ROI`, 'warn');
-  relocking = true;
-  relock_end_t = now + RELOCK_GRACE_SEC;
-  session.relock_times.push(now);
-  chest_buf = [];
-  segment_baseline = null;
-  locked_chest_size = null;
-}
-
-function mainTick() {
+// ================== MAIN LOOP ==================
+function processFrame() {
   if (!running) return;
   const now = performance.now() / 1000;
 
-  fpsFrames++;
-  if (performance.now() - fpsLast > 1000) {
-    measuredFps = fpsFrames * 1000 / (performance.now() - fpsLast);
-    fpsFrames = 0; fpsLast = performance.now();
-    fpsBadge.textContent = `FPS ${measuredFps.toFixed(1)}`;
+  if (lastFrameT !== null) {
+    const dt = now - lastFrameT;
+    if (dt > 0) {
+      fpsSamples.push(1/dt);
+      if (fpsSamples.length > 60) fpsSamples.shift();
+      const sorted = fpsSamples.slice().sort((a,b)=>a-b);
+      measuredFps = sorted[Math.floor(sorted.length/2)];
+    }
   }
+  lastFrameT = now;
 
-  if (now < nextT) { requestAnimationFrame(mainTick); return; }
-  nextT = now + 1/PROCESS_FPS;
-
-  const W = videoEl.videoWidth, H = videoEl.videoHeight;
-  if (!W || !H) { requestAnimationFrame(mainTick); return; }
-  if (hiddenCanvas.width !== W || hiddenCanvas.height !== H) {
-    hiddenCanvas.width = W; hiddenCanvas.height = H;
+  if (!videoEl.videoWidth || !videoEl.videoHeight || !mpReady) {
+    requestAnimationFrame(processFrame); return;
   }
-  hiddenCtx.drawImage(videoEl, 0, 0, W, H);
+  const vw = videoEl.videoWidth, vh = videoEl.videoHeight;
+  if (hiddenCanvas.width !== vw || hiddenCanvas.height !== vh) {
+    hiddenCanvas.width = vw; hiddenCanvas.height = vh;
+  }
+  hiddenCtx.drawImage(videoEl, 0, 0, vw, vh);
 
-  // Pose inference
-  let new_chest = null, conf = 0, pose_visible = false;
+  let result;
   try {
-    const res = poseLandmarker.detectForVideo(videoEl, performance.now());
-    if (res.landmarks && res.landmarks.length > 0) {
-      const r = computeChestRoi(res.landmarks[0], W, H);
-      new_chest = r.chest; conf = r.conf;
-      pose_visible = new_chest !== null && conf >= MIN_VISIBILITY;
-    }
-  } catch (e) { /* ignore transient */ }
+    result = faceLandmarker.detectForVideo(videoEl, performance.now());
+  } catch(e) {
+    requestAnimationFrame(processFrame); return;
+  }
 
-  // Pose-loss state machine
-  if (pose_visible) {
-    if (pose_lost_count >= POSE_LOST_FRAMES) {
-      triggerRelock(now, `Pose re-acquired after ${(pose_lost_count/PROCESS_FPS).toFixed(1)}s absence`);
+  let landmarks = null;
+  if (result && result.faceLandmarks && result.faceLandmarks.length) {
+    landmarks = result.faceLandmarks[0];
+  }
+
+  // Compute & smooth ROIs
+  const currentBoxes = {};
+  for (const name of ROI_NAMES) {
+    let raw = null;
+    if (landmarks) raw = polygonBbox(landmarks, LANDMARKS[name], vw, vh);
+    if (raw) smoothBoxes[name] = emaBox(raw, smoothBoxes[name]);
+    currentBoxes[name] = smoothBoxes[name];
+  }
+
+  // Sample RGB only when face exists; we still keep the smoothed boxes even
+  // if a frame's detection blinked, so a brief miss doesn't kill the buffer.
+  let imgData = null;
+  if (landmarks) {
+    imgData = hiddenCtx.getImageData(0, 0, vw, vh);
+  }
+  for (const name of ROI_NAMES) {
+    let rgb = null;
+    if (imgData && currentBoxes[name]) {
+      rgb = meanRgbInBox(imgData, vw, currentBoxes[name]);
     }
-    pose_lost_count = 0;
+    rois[name].addSample(rgb, now);
+    rois[name].trim(BUFFER_SEC);
+  }
+
+  // Banner state
+  if (!landmarks) {
+    estimatorState = 'no_face';
+    bannerEl.className = 'banner no_face';
+    bannerEl.textContent = 'NO FACE DETECTED';
+    reasonEl.textContent = 'Center your face in the frame.';
   } else {
-    pose_lost_count++;
-    if (pose_lost_count === POSE_LOST_FRAMES) {
-      log('Pose lost (person out of view) → segment paused', 'warn');
-      chest_buf = [];
-      segment_baseline = null;
-      locked_chest_size = null;
+    const ready = rois[ROI_NAMES[0]].rgbBuf.length >= MIN_ANALYSIS_SEC * measuredFps;
+    if (!ready) {
+      estimatorState = 'warming';
+      bannerEl.className = 'banner warming';
+      bannerEl.textContent = 'WARMING UP...';
+      const elapsed = rois[ROI_NAMES[0]].rgbBuf.length / Math.max(1, measuredFps);
+      reasonEl.textContent = `Collecting signal: ${elapsed.toFixed(1)} / ${MIN_ANALYSIS_SEC}s`;
+    } else {
+      estimatorState = 'measuring';
+      bannerEl.className = 'banner measuring';
+      bannerEl.textContent = 'MEASURING HEART RATE';
+      reasonEl.textContent = `Hold still — best ROI auto-selected`;
     }
   }
-  const pose_is_lost = pose_lost_count >= POSE_LOST_FRAMES;
+  fpsBadge.textContent = `FPS ${measuredFps.toFixed(1)}`;
 
-  // Movement detection
-  if (pose_visible && conf >= LOCK_VISIBILITY && !pose_is_lost) {
-    const shift = tracked_chest ? roiDistance(new_chest, tracked_chest) : 0;
-    let size_changed = false, size_ratio = 1.0;
-    if (locked_chest_size && locked_chest_size > 0) {
-      size_ratio = new_chest[2] / locked_chest_size;
-      if (Math.abs(size_ratio - 1.0) > ROI_SIZE_CHANGE_RATIO) size_changed = true;
-    }
-    if (tracked_chest && (shift > TRACK_SHIFT_PX || size_changed) && !relocking) {
-      const reason = size_changed ? `Chest size changed (x${size_ratio.toFixed(2)})`
-                                  : `Chest moved ${shift.toFixed(0)}px`;
-      triggerRelock(now, reason);
-    }
-    tracked_chest = tracked_chest ? emaRoi(new_chest, tracked_chest, TRACK_SMOOTH_ALPHA)
-                                  : new_chest;
-  }
-  if (relocking && now >= relock_end_t) {
-    if (new_chest) tracked_chest = new_chest;
-    relocking = false;
-    log('Re-lock complete', 'ok');
-  }
+  // Process every 0.5s
+  if (now - lastProcessT > 0.5 && measuredFps > 5) {
+    lastProcessT = now;
+    for (const name of ROI_NAMES) rois[name].process(measuredFps);
 
-  // Data collection
-  let chest_val = 0;
-  if (!pose_is_lost && tracked_chest) {
-    chest_val = roiMeanIntensity(hiddenCtx, tracked_chest, W, H);
-    chest_buf.push(chest_val);
-    const maxBuf = BUFFER_SECONDS * PROCESS_FPS;
-    while (chest_buf.length > maxBuf) chest_buf.shift();
-  }
-  session.times.push(now);
-  session.chest_signal.push(chest_val);
+    const winner = selector.select(rois, now);
+    if (winner.name) {
+      winnerHistory.push([now, winner.name]);
+      const w = rois[winner.name];
 
-  // Filter + baseline / current
-  let chest_f = null;
-  let baseline_amp = 0, current_amp = 0, norm_chest = 0;
-  const min_run_samples = Math.floor(MIN_BASELINE_SEC * PROCESS_FPS);
-  const warm_samples    = Math.floor(WARMUP_SECONDS    * PROCESS_FPS);
+      // HR primary: IBI from beats in window
+      const winStart = now - HR_WIN_SEC;
+      const recent = beats.times.filter(t => t >= winStart && t <= now);
+      let hrIbi = 0, nBeats = 0;
+      if (recent.length >= 2) {
+        const ibs = [];
+        for (let i = 1; i < recent.length; i++) {
+          const d = recent[i] - recent[i-1];
+          if (d > 0.3 && d < 1.5) ibs.push(d);
+        }
+        if (ibs.length) {
+          const mIbi = ibs.reduce((a,b)=>a+b)/ibs.length;
+          hrIbi = 60 / mIbi; nBeats = ibs.length + 1;
+        }
+      }
+      if (nBeats >= 3) {
+        liveHr = hrIbi; liveConf = Math.min(1, nBeats/10); liveMethod = 'IBI';
+      } else if (w.lastFiltered) {
+        const winN = Math.floor(HR_WIN_SEC * measuredFps);
+        const winSig = w.lastFiltered.length > winN
+          ? w.lastFiltered.slice(w.lastFiltered.length - winN)
+          : w.lastFiltered;
+        const { hr, confidence } = estimateHrFft(winSig, measuredFps);
+        if (confidence > 0.1 && hr >= HR_LOW_HZ*60 && hr <= HR_HIGH_HZ*60) {
+          liveHr = hr; liveConf = confidence; liveMethod = 'FFT';
+        }
+      }
 
-  if (pose_is_lost || relocking) {
-    session.chest_filtered.push(0);
-    session.baseline.push(0);
-    session.current.push(0);
-  } else if (chest_buf.length > min_run_samples) {
-    const m = mean(chest_buf);
-    const centered = new Float64Array(chest_buf.length);
-    for (let i = 0; i < chest_buf.length; i++) centered[i] = chest_buf[i] - m;
-    try {
-      const coef = designBandpass(PROCESS_FPS, HIGHPASS_CUTOFF, LOWPASS_CUTOFF);
-      chest_f = filtfilt(centered, coef);
-    } catch (e) { chest_f = centered; }
-
-    if (segment_baseline === null && chest_buf.length >= warm_samples) {
-      const info = robustBaselineAmplitude(Array.from(chest_f.slice(-warm_samples)),
-                                           PROCESS_FPS, WARMUP_SECONDS);
-      segment_baseline = info.baseline;
-      locked_chest_size = tracked_chest ? tracked_chest[2] : null;
-      session.locked_baselines.push({
-        time: now, value: segment_baseline, source: 'chest',
-        method: info.method,
-        typical_peak: info.typical_peak, typical_trough: info.typical_trough,
-        peak_iqr: info.peak_iqr, trough_iqr: info.trough_iqr,
-        peak_fence: info.peak_fence, trough_fence: info.trough_fence,
-        peak_count: info.peak_count, trough_count: info.trough_count,
-        peak_in_iqr: info.peak_in_iqr, trough_in_iqr: info.trough_in_iqr,
-        chest_width_px: locked_chest_size
-      });
-      const n = session.locked_baselines.length;
-      log(`Segment #${n} baseline locked: ${segment_baseline.toFixed(4)} (${info.method})`, 'ok');
-      if (info.method === 'iqr') {
-        log(`   peaks   mean=${info.typical_peak.toFixed(3)}  Q1Q3=[${info.peak_iqr[0].toFixed(3)},${info.peak_iqr[1].toFixed(3)}]  fence=[${info.peak_fence[0].toFixed(3)},${info.peak_fence[1].toFixed(3)}]  kept ${info.peak_in_iqr}/${info.peak_count}`);
-        log(`   troughs mean=${info.typical_trough.toFixed(3)}  Q1Q3=[${info.trough_iqr[0].toFixed(3)},${info.trough_iqr[1].toFixed(3)}]  fence=[${info.trough_fence[0].toFixed(3)},${info.trough_fence[1].toFixed(3)}]  kept ${info.trough_in_iqr}/${info.trough_count}`);
+      // Beat detection from winner's signal
+      if (now - lastBeatScan > 0.5 && w.lastFiltered) {
+        lastBeatScan = now;
+        const filt = w.lastFiltered;
+        let mean = 0;
+        for (let i = 0; i < filt.length; i++) mean += filt[i];
+        mean /= filt.length;
+        let vr = 0;
+        for (let i = 0; i < filt.length; i++) vr += (filt[i]-mean)*(filt[i]-mean);
+        const std = Math.sqrt(vr/filt.length) + 1e-9;
+        if (std > 1e-6) {
+          const norm = new Float64Array(filt.length);
+          for (let i = 0; i < filt.length; i++) norm[i] = filt[i]/std;
+          const minDist = Math.max(1, Math.floor(PEAK_MIN_DIST_SEC * measuredFps));
+          const peakIdxs = findPeaks(norm, minDist, PEAK_MIN_PROMINENCE);
+          const stableCutoff = now - BEAT_STABLE_DELAY_SEC;
+          for (const idx of peakIdxs) {
+            const tp = w.timeBuf[idx];
+            if (tp === undefined || tp > stableCutoff) continue;
+            beats.add(tp);
+          }
+        }
       }
     }
-    if (segment_baseline !== null) {
-      baseline_amp = segment_baseline;
-      current_amp = rollingAmplitude(chest_f, PROCESS_FPS, 5);
-    }
-    const s = stdev(chest_f) + 1e-6;
-    norm_chest = chest_f[chest_f.length-1] / s;
-    session.chest_filtered.push(norm_chest);
-    session.baseline.push(baseline_amp);
-    session.current.push(current_amp);
+  }
+
+  drawOverlay(currentBoxes, vw, vh);
+  if (selector.current && rois[selector.current].lastFiltered) {
+    drawWaveform(rois[selector.current]);
+  }
+  updateDisplay();
+
+  requestAnimationFrame(processFrame);
+}
+
+function drawOverlay(boxes, vw, vh) {
+  const W = overlayEl.clientWidth, H = overlayEl.clientHeight;
+  if (overlayEl.width !== W || overlayEl.height !== H) {
+    overlayEl.width = W; overlayEl.height = H;
+  }
+  const ctx = overlayCtx;
+  ctx.clearRect(0, 0, W, H);
+  if (!vw || !vh) return;
+  // The video has object-fit: cover, so we need to map source coords
+  // (vw x vh) to display rect (W x H) preserving aspect ratio (cover).
+  const srcAR = vw / vh, dstAR = W / H;
+  let scale, dx, dy;
+  if (srcAR > dstAR) {
+    scale = H / vh;
+    dx = (W - vw*scale) / 2; dy = 0;
   } else {
-    session.chest_filtered.push(0);
-    session.baseline.push(0);
-    session.current.push(0);
+    scale = W / vw;
+    dx = 0; dy = (H - vh*scale) / 2;
   }
-
-  updateLiveUI(pose_is_lost, baseline_amp, current_amp);
-  drawOverlay(pose_is_lost);
-  if (chest_f) drawLiveWaveform(chest_f);
-
-  requestAnimationFrame(mainTick);
+  const winName = selector.current;
+  for (const name of ROI_NAMES) {
+    const b = boxes[name]; if (!b) continue;
+    const x = b.x*scale + dx, y = b.y*scale + dy;
+    const w = b.w*scale, h = b.h*scale;
+    const isWinner = name === winName;
+    ctx.lineWidth = isWinner ? 3 : 1;
+    ctx.strokeStyle = ROI_COLORS[name];
+    ctx.globalAlpha = isWinner ? 1.0 : 0.5;
+    ctx.strokeRect(x, y, w, h);
+    ctx.globalAlpha = 1.0;
+    ctx.fillStyle = ROI_COLORS[name];
+    ctx.font = '11px sans-serif';
+    const snr = rois[name].lastSnr;
+    const tag = isWinner ? `${name} q=${snr.toFixed(2)} ★` : `${name} q=${snr.toFixed(2)}`;
+    ctx.fillText(tag, x, y > 14 ? y-3 : y+12);
+  }
 }
 
-function updateLiveUI(pose_is_lost, baseline_amp, current_amp) {
-  const seg = session.locked_baselines.length;
-  mSegment.textContent = segment_baseline === null ? (seg === 0 ? 'warmup' : `warmup #${seg+1}`)
-                                                   : String(seg);
-  mBaseline.textContent = segment_baseline !== null ? segment_baseline.toFixed(3) : '--';
-  mRelocks.textContent  = session.relock_times.length;
+function updateDisplay() {
+  if (liveHr > 0) {
+    hrLiveEl.textContent = liveHr.toFixed(0);
+    hrLiveSub.textContent = `bpm — ${liveMethod} (conf ${liveConf.toFixed(2)})`;
+    hrLiveEl.style.color = liveConf > 0.25 ? 'var(--good)' :
+                            liveConf > 0.15 ? 'var(--mid)' : 'var(--bad)';
+  } else {
+    hrLiveEl.textContent = '--';
+    hrLiveSub.textContent = 'bpm';
+    hrLiveEl.style.color = '';
+  }
 
-  if (pose_is_lost) {
-    setBanner('err', 'PERSON OUT OF VIEW', 'segment paused until pose returns');
-    mRatio.textContent = '--'; mZone.textContent = '—'; return;
-  }
-  if (relocking) {
-    setBanner('warn', 'RE-LOCKING ROI…', 'waiting for signal to settle');
-    mRatio.textContent = '--'; mZone.textContent = '—'; return;
-  }
-  if (segment_baseline === null) {
-    const have = chest_buf.length / PROCESS_FPS;
-    const label = seg === 0 ? 'WARMUP' : `WARMUP (segment #${seg+1})`;
-    setBanner('pose_lock', `${label}  ${have.toFixed(0)}/${WARMUP_SECONDS}s`,
-              'measuring typical breathing to lock baseline');
-    mRatio.textContent = '--'; mZone.textContent = '—'; return;
-  }
-  setBanner('monitor', `SEGMENT #${seg}  baseline=${segment_baseline.toFixed(3)}`,
-            'detection will run offline when you press Stop');
-  if (baseline_amp > 1e-6) {
-    const ratio = current_amp / baseline_amp;
-    mRatio.textContent = ratio.toFixed(2);
-    if (ratio < APNEA_AMPLITUDE_RATIO) {
-      mZone.textContent = 'APNEA ZONE'; mZone.style.color = 'var(--bad)';
-    } else if (ratio < HYPOPNEA_AMPLITUDE_RATIO) {
-      mZone.textContent = 'HYPOPNEA ZONE'; mZone.style.color = 'var(--mid)';
+  beatsCountEl.textContent = beats.times.length || '--';
+
+  if (beats.times.length >= 2) {
+    const ibs = [];
+    for (let i = 1; i < beats.times.length; i++) {
+      const d = (beats.times[i]-beats.times[i-1])*1000;
+      if (d > 300 && d < 1500) ibs.push(d);
+    }
+    if (ibs.length) {
+      const m = ibs.reduce((a,b)=>a+b)/ibs.length;
+      meanIbiEl.textContent = m.toFixed(0);
+    } else meanIbiEl.textContent = '--';
+  } else meanIbiEl.textContent = '--';
+
+  for (const name of ROI_NAMES) {
+    const card = document.querySelector(`.roi-card[data-roi="${name}"]`);
+    const snrEl = document.getElementById('snr_'+name);
+    const algoEl = document.getElementById('algo_'+name);
+    const r = rois[name];
+    if (r.lastSnr > 0) {
+      snrEl.textContent = r.lastSnr.toFixed(3);
+      algoEl.textContent = r.lastAlgo
+        ? `${r.lastAlgo}  (g=${r.lastSnrGreen.toFixed(3)} p=${r.lastSnrPos.toFixed(3)})`
+        : '-';
     } else {
-      mZone.textContent = 'normal'; mZone.style.color = 'var(--muted)';
+      snrEl.textContent = '--'; algoEl.textContent = '-';
     }
-  } else { mRatio.textContent = '--'; mZone.textContent = '—'; }
+    if (selector.current === name) card.classList.add('winner');
+    else card.classList.remove('winner');
+  }
+
+  if (selector.current) {
+    const w = rois[selector.current];
+    winnerNameEl.textContent = selector.current;
+    winnerSubEl.textContent =
+      `q=${w.lastSnr.toFixed(3)} • ${w.lastAlgo || '-'}`;
+  } else {
+    winnerNameEl.textContent = '--';
+    winnerSubEl.textContent = 'no usable ROI yet';
+  }
 }
 
-// ============ INITIAL POSE LOCK ============
-function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
-async function initialPoseLock() {
-  setBanner('pose_lock', 'Pose detection…', `locking ROI (up to ${POSE_DETECT_SECONDS}s)`);
-  const t0 = performance.now()/1000;
-  let recent = [];
-  let stableCount = 0;
-  let smoothed = null;
-  while (running && performance.now()/1000 - t0 < POSE_DETECT_SECONDS) {
-    const W = videoEl.videoWidth, H = videoEl.videoHeight;
-    if (!W || !H) { await sleep(30); continue; }
-    let chest = null, conf = 0;
-    try {
-      const r = poseLandmarker.detectForVideo(videoEl, performance.now());
-      if (r.landmarks && r.landmarks.length) {
-        const rr = computeChestRoi(r.landmarks[0], W, H);
-        chest = rr.chest; conf = rr.conf;
+function drawWaveform(winner) {
+  const ctx = waveCtx;
+  const W = waveCanvas.clientWidth, H = waveCanvas.clientHeight;
+  if (waveCanvas.width !== W || waveCanvas.height !== H) {
+    waveCanvas.width = W; waveCanvas.height = H;
+  }
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = '#0f1117'; ctx.fillRect(0, 0, W, H);
+  ctx.strokeStyle = '#2a2f3d';
+  ctx.beginPath(); ctx.moveTo(0, H/2); ctx.lineTo(W, H/2); ctx.stroke();
+
+  const filt = winner.lastFiltered;
+  if (!filt || filt.length < 30) return;
+  if (filt.length / measuredFps < FILTER_WARMUP_SEC) return;
+  const dispN = Math.min(filt.length, Math.floor(8 * measuredFps));
+  const seg = filt.slice(filt.length - dispN);
+  let mean = 0;
+  for (let i = 0; i < seg.length; i++) mean += seg[i];
+  mean /= seg.length;
+  let vr = 0;
+  for (let i = 0; i < seg.length; i++) vr += (seg[i]-mean)*(seg[i]-mean);
+  const std = Math.sqrt(vr/seg.length) + 1e-9;
+  if (std < 1e-6) return;
+  let maxAbs = 0;
+  for (let i = 0; i < seg.length; i++) {
+    const v = (seg[i]-mean)/std;
+    if (Math.abs(v) > maxAbs) maxAbs = Math.abs(v);
+  }
+  if (maxAbs < 0.1) maxAbs = 1;
+
+  ctx.strokeStyle = '#f97316';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  for (let i = 0; i < seg.length; i++) {
+    const v = (seg[i]-mean)/std;
+    const x = (i/(seg.length-1))*W;
+    const y = H/2 - (v/maxAbs)*(H/2*0.8);
+    if (i === 0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+  }
+  ctx.stroke();
+
+  // Beats
+  if (winner.timeBuf.length >= dispN) {
+    const tStart = winner.timeBuf[winner.timeBuf.length - dispN];
+    const tEnd = winner.timeBuf[winner.timeBuf.length - 1];
+    ctx.fillStyle = '#4ade80';
+    for (const tb of beats.times) {
+      if (tb >= tStart && tb <= tEnd) {
+        const rel = (tb - tStart)/(tEnd - tStart + 1e-9);
+        const x = rel*W;
+        ctx.beginPath(); ctx.arc(x, H/2, 4, 0, 2*Math.PI); ctx.fill();
       }
-    } catch (e) {}
-    if (chest && conf >= LOCK_VISIBILITY) {
-      recent.push(chest); if (recent.length > LOCK_CONSECUTIVE) recent.shift();
-      stableCount++;
-      smoothed = smoothed ? emaRoi(chest, smoothed, 0.3) : chest;
-      if (recent.length >= LOCK_CONSECUTIVE) {
-        const xs = recent.map(r=>r[0]), ys = recent.map(r=>r[1]);
-        const ws = recent.map(r=>r[2]), hs = recent.map(r=>r[3]);
-        const stable = stdev(xs) < LOCK_STABILITY_PX && stdev(ys) < LOCK_STABILITY_PX
-                    && stdev(ws) < LOCK_STABILITY_PX && stdev(hs) < LOCK_STABILITY_PX;
-        if (!stable) { recent = recent.slice(-3); stableCount = recent.length; }
-      }
-    } else {
-      stableCount = 0; recent = [];
     }
-    overlayCanvas.width = W; overlayCanvas.height = H;
-    overlayCtx.clearRect(0,0,W,H);
-    if (smoothed) {
-      overlayCtx.strokeStyle = '#60a5fa'; overlayCtx.lineWidth = 3;
-      overlayCtx.strokeRect(...smoothed);
-      overlayCtx.fillStyle = '#60a5fa'; overlayCtx.font = 'bold 14px sans-serif';
-      overlayCtx.fillText('CHEST (detecting…)', smoothed[0], Math.max(18, smoothed[1]-6));
-    }
-    setBanner('pose_lock', `Pose detection  ${stableCount}/${LOCK_CONSECUTIVE}`,
-              `shoulder conf ${conf.toFixed(2)} (need ${LOCK_VISIBILITY})`);
-    if (stableCount >= LOCK_CONSECUTIVE) {
-      const med = k => {
-        const s = recent.map(r=>r[k]).slice().sort((a,b)=>a-b);
-        return s[Math.floor(s.length/2)];
-      };
-      return [med(0), med(1), med(2), med(3)];
-    }
-    await sleep(50);
   }
-  return null;
+
+  ctx.fillStyle = '#8892a6'; ctx.font = '11px sans-serif';
+  ctx.fillText(`signal from ${winner.name}`, 8, H-6);
 }
 
-// ============ SESSION LIFECYCLE ============
-async function startSession() {
-  startBtn.disabled = true;
-  newSession();
-  tracked_chest = null;
-  chest_buf = [];
-  segment_baseline = null;
-  locked_chest_size = null;
-  pose_lost_count = 0;
-  relocking = false;
-  relock_end_t = 0;
+// ================== OFFLINE ANALYSIS ==================
+function runOfflineAnalysis() {
+  const duration = (performance.now()/1000) - sessionStart;
+  // Re-process each ROI from FULL buffers (both algorithms)
+  const fps = measuredFps;
+  const perRoi = {};
+  for (const name of ROI_NAMES) {
+    const r = rois[name];
+    if (r.fullRgb.length < Math.floor(MIN_ANALYSIS_SEC * fps)) continue;
+    const N = r.fullRgb.length;
+    const coef = designBandpass(fps, HR_LOW_HZ, HR_HIGH_HZ);
 
-  if (!await startCamera()) { startBtn.disabled = false; return; }
-  try { await ensurePose(); }
-  catch (e) {
-    log('Pose init failed: ' + e.message, 'err');
-    setBanner('err', 'Model failed', e.message);
-    startBtn.disabled = false; stopCamera(); return;
-  }
-
-  running = true;
-  stopBtn.disabled = false;
-  startTimer();
-  sessionStart = performance.now()/1000;
-
-  const lockedRoi = await initialPoseLock();
-  if (!lockedRoi) {
-    log('Pose lock timed out', 'warn');
-    setBanner('err', 'Pose lock failed', 'could not detect stable pose in 15s');
-    stopSession(); return;
-  }
-  tracked_chest = lockedRoi;
-  log('Pose locked. Starting warmup.', 'ok');
-  nextT = performance.now()/1000;
-  requestAnimationFrame(mainTick);
-}
-
-function stopSession() {
-  if (!running && !stream) return;
-  running = false;
-  stopTimer();
-  stopCamera();
-  startBtn.disabled = true;
-  stopBtn.disabled = true;
-  log('Session stopped. Computing offline results…');
-  setTimeout(() => {
+    let greenFilt = null, greenSnr = 0;
     try {
-      const res = computeOfflineResults();
-      liveView.style.display = 'none';
-      resultsView.classList.add('show');
-      requestAnimationFrame(() => requestAnimationFrame(() => {
-        renderResults(res);
-        log('Results ready', 'ok');
-      }));
-    } catch (e) {
-      log('Analysis failed: ' + e.message, 'err');
-      console.error(e);
-      startBtn.disabled = false;
+      const g = new Float64Array(N);
+      let m = 0;
+      for (let i = 0; i < N; i++) m += r.fullRgb[i][1];
+      m /= N;
+      for (let i = 0; i < N; i++) g[i] = r.fullRgb[i][1] - m;
+      greenFilt = filtfilt(g, coef);
+      greenSnr = signalSnr(greenFilt, fps);
+    } catch(e) {}
+    let posFilt = null, posSnr = 0;
+    try {
+      const p = posAlgorithm(r.fullRgb, fps);
+      posFilt = filtfilt(p, coef);
+      posSnr  = signalSnr(posFilt, fps);
+    } catch(e) {}
+    if (!greenFilt && !posFilt) continue;
+    let filt, snr, algo;
+    if (greenSnr >= posSnr && greenFilt) { filt = greenFilt; snr = greenSnr; algo = 'green'; }
+    else { filt = posFilt; snr = posSnr; algo = 'pos'; }
+    perRoi[name] = { filt, snr, algo, snrGreen: greenSnr, snrPos: posSnr,
+                      times: r.fullT.slice() };
+  }
+  if (!Object.keys(perRoi).length) return { empty: true, duration, fps };
+  let bestName = null, bestSnr = -1;
+  for (const n of Object.keys(perRoi)) if (perRoi[n].snr > bestSnr) { bestName = n; bestSnr = perRoi[n].snr; }
+  const best = perRoi[bestName];
+
+  // Re-detect beats from best signal
+  const warmupN = Math.floor(FILTER_WARMUP_SEC * fps);
+  let beatTimes = [];
+  if (best.filt.length > warmupN + 20) {
+    const sig = best.filt.slice(warmupN);
+    const times = best.times.slice(warmupN);
+    let mean = 0;
+    for (let i = 0; i < sig.length; i++) mean += sig[i];
+    mean /= sig.length;
+    let vr = 0;
+    for (let i = 0; i < sig.length; i++) vr += (sig[i]-mean)*(sig[i]-mean);
+    const std = Math.sqrt(vr/sig.length) + 1e-9;
+    if (std > 1e-6) {
+      const norm = new Float64Array(sig.length);
+      for (let i = 0; i < sig.length; i++) norm[i] = sig[i]/std;
+      const minDist = Math.max(1, Math.floor(PEAK_MIN_DIST_SEC * fps));
+      const peaks = findPeaks(norm, minDist, PEAK_MIN_PROMINENCE);
+      for (const p of peaks) beatTimes.push(times[p]);
     }
-  }, 200);
-}
+  }
+  beatTimes.sort((a,b)=>a-b);
 
-// ============ OFFLINE RESULTS ============
-function computeOfflineResults() {
-  const n = session.times.length;
-  if (n === 0) return { empty: true, duration: 0 };
-  const t0 = session.times[0];
-  const tRel = session.times.map(t => t - t0);
-  const duration = session.times[n-1] - t0;
+  const rawIbisMs = [];
+  for (let i = 1; i < beatTimes.length; i++)
+    rawIbisMs.push((beatTimes[i]-beatTimes[i-1])*1000);
+  const hrv = rawIbisMs.length > 2 ? computeHrv(rawIbisMs) : null;
 
-  const events = detectEventsOffline(session.times, session.current, session.baseline);
-  session.events = events;
-
-  const inEvent = new Array(n).fill(false);
-  for (const e of events) {
-    for (let i = 0; i < n; i++) {
-      if (session.times[i] >= e.start && session.times[i] <= e.end) inEvent[i] = true;
+  // HR timelines
+  const hrIbi = [], hrFft = [];
+  const t0 = best.times[0];
+  const sessionDur = best.times[best.times.length-1] - t0;
+  const stepSec = 2.0, winSec = HR_WIN_SEC, half = winSec/2.0;
+  let tc = half;
+  while (tc <= sessionDur) {
+    const wStart = (tc - half) + t0;
+    const wEnd = (tc + half) + t0;
+    const inWin = beatTimes.filter(t => t >= wStart && t <= wEnd);
+    if (inWin.length >= 3) {
+      const ibs = [];
+      for (let i = 1; i < inWin.length; i++) {
+        const d = inWin[i]-inWin[i-1];
+        if (d > 0.3 && d < 1.5) ibs.push(d);
+      }
+      if (ibs.length >= 2) {
+        const mn = ibs.reduce((a,b)=>a+b)/ibs.length;
+        hrIbi.push([tc, 60/mn]);
+      }
     }
+    // FFT segment
+    const seg = [];
+    for (let i = 0; i < best.times.length; i++) {
+      if (best.times[i] >= wStart && best.times[i] <= wEnd) seg.push(best.filt[i]);
+    }
+    if (seg.length >= fps*3) {
+      const { hr, confidence } = estimateHrFft(seg, fps);
+      if (confidence > 0.1 && hr >= 40 && hr <= 180) hrFft.push([tc, hr]);
+    }
+    tc += stepSec;
   }
-
-  const filtered = session.chest_filtered.slice();
-  const inhales = [], exhales = [];
-  if (filtered.length > 20) {
-    const s = stdev(filtered) + 1e-6;
-    const norm = filtered.map(v => v / s);
-    const minDist = Math.max(Math.floor(MIN_BREATH_INTERVAL * PROCESS_FPS), 1);
-    const peakIdx = findPeaks(norm, minDist, PEAK_MIN_ABS);
-    const troughIdx = findPeaks(norm.map(v => -v), minDist, PEAK_MIN_ABS);
-    for (const i of peakIdx)   if (!inEvent[i]) inhales.push(session.times[i]);
-    for (const i of troughIdx) if (!inEvent[i]) exhales.push(session.times[i]);
-  }
-  session.inhales = inhales; session.exhales = exhales;
-
-  const apneas = events.filter(e => e.type === 'apnea').length;
-  const hypos  = events.filter(e => e.type === 'hypopnea').length;
-  const longest = events.reduce((m, e) => Math.max(m, e.duration), 0);
-  const eph = events.length / Math.max(duration/3600, 1/3600);
-
-  // ---- AHI severity ----
-  // AHI = (total apneas + total hypopneas) / total hours
-  // Only meaningful if the session is long enough (<20 min makes AHI unreliable,
-  // e.g. 1 event in 2 minutes extrapolates to "severe" which is nonsense).
-  const MIN_SECONDS_FOR_AHI = 20 * 60;
-  let ahi = null, ahiSeverity = null, ahiClass = 'insufficient';
-  if (duration >= MIN_SECONDS_FOR_AHI) {
-    ahi = (apneas + hypos) / (duration / 3600);
-    if      (ahi < 5)  { ahiSeverity = 'Normal';   ahiClass = 'normal';   }
-    else if (ahi < 15) { ahiSeverity = 'Mild';     ahiClass = 'mild';     }
-    else if (ahi < 30) { ahiSeverity = 'Moderate'; ahiClass = 'moderate'; }
-    else               { ahiSeverity = 'Severe';   ahiClass = 'severe';   }
-  }
+  const median = arr => {
+    if (!arr.length) return null;
+    const s = arr.slice().sort((a,b)=>a-b);
+    return s.length % 2 ? s[(s.length-1)/2] : (s[s.length/2-1]+s[s.length/2])/2;
+  };
+  const medIbi = median(hrIbi.map(x=>x[1]));
+  const medFft = median(hrFft.map(x=>x[1]));
 
   return {
-    empty: false, t0, tRel, duration,
-    filtered, baseline: session.baseline, current: session.current,
-    events, inhales, exhales,
-    apneas, hypos, longest, eph,
-    ahi, ahiSeverity, ahiClass,
-    relock_times: session.relock_times,
-    locked_baselines: session.locked_baselines,
-    total: n
+    empty: false, duration, fps,
+    bestName, perRoi, best, t0, sessionDur,
+    beatTimes, rawIbisMs, hrv, hrIbi, hrFft, medIbi, medFft,
+    winnerHistory: winnerHistory.slice(),
   };
 }
 
-function nearestIdx(times, t) {
-  let lo = 0, hi = times.length - 1;
-  if (hi < 0) return 0;
-  while (hi - lo > 1) {
-    const mid = (lo+hi) >> 1;
-    if (times[mid] < t) lo = mid; else hi = mid;
+// ================== RESULTS RENDERING ==================
+function setupCanvas(canvas, heightPx) {
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  let W = rect.width;
+  if (W < 10) {
+    const parent = canvas.parentElement;
+    W = parent ? parent.clientWidth - 20 : 320;
   }
-  return Math.abs(times[lo]-t) < Math.abs(times[hi]-t) ? lo : hi;
+  if (W < 10) W = 320;
+  canvas.width = W * dpr;
+  canvas.height = heightPx * dpr;
+  canvas.style.width = W + 'px';
+  canvas.style.height = heightPx + 'px';
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+  return { ctx, W, H: heightPx };
 }
+function drawAxes(ctx, W, H, xMin, xMax, yMin, yMax, opts={}) {
+  const pad = { l: 46, r: 10, t: 10, b: 24 };
+  ctx.fillStyle = '#0a0c12'; ctx.fillRect(0, 0, W, H);
+  ctx.strokeStyle = '#2a2f3d'; ctx.lineWidth = 1;
+  ctx.strokeRect(pad.l, pad.t, W-pad.l-pad.r, H-pad.t-pad.b);
+  ctx.fillStyle = '#8892a6';
+  ctx.font = '10px sans-serif';
+  const plotW = W-pad.l-pad.r, plotH = H-pad.t-pad.b;
+  const yTicks = 4;
+  for (let i = 0; i <= yTicks; i++) {
+    const yVal = yMin + (yMax-yMin)*(i/yTicks);
+    const y = pad.t + plotH - plotH*(i/yTicks);
+    ctx.strokeStyle = '#1a1d26';
+    ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(W-pad.r, y); ctx.stroke();
+    ctx.fillText(yVal.toFixed(opts.yDecimals ?? 0), 4, y+3);
+  }
+  const xTicks = 6;
+  for (let i = 0; i <= xTicks; i++) {
+    const xVal = xMin + (xMax-xMin)*(i/xTicks);
+    const x = pad.l + plotW*(i/xTicks);
+    ctx.fillText(xVal.toFixed(0)+'s', x-6, H-8);
+  }
+  if (opts.yLabel) {
+    ctx.save(); ctx.translate(14, pad.t + plotH/2); ctx.rotate(-Math.PI/2);
+    ctx.textAlign = 'center'; ctx.fillText(opts.yLabel, 0, 0); ctx.restore();
+  }
+  return { pad, plotW, plotH };
+}
+function sx(t, tMin, tMax, pad, plotW) { return pad.l + ((t-tMin)/(tMax-tMin+1e-9))*plotW; }
+function sy(v, yMin, yMax, pad, plotH) { return pad.t + plotH - ((v-yMin)/(yMax-yMin+1e-9))*plotH; }
 
 function renderResults(res) {
   window.scrollTo(0, 0);
-
-  // ---- AHI severity box + scale ----
-  const ahiBox = document.getElementById('ahiBox');
-  ahiBox.className = 'ahi-box ' + res.ahiClass;
-  if (res.ahi === null) {
-    ahiBox.innerHTML =
-      `<strong>Severity can't be discussed</strong>` +
-      `<div class="detail">Insufficient events / data ` +
-      `(need &ge; 20 min session for a reliable AHI)</div>`;
-  } else {
-    ahiBox.innerHTML =
-      `<strong>${res.ahiSeverity}</strong> &nbsp;·&nbsp; AHI = ${res.ahi.toFixed(1)} /hr` +
-      `<div class="detail">(${res.apneas} apneas + ${res.hypos} hypopneas) &divide; ` +
-      `${(res.duration/3600).toFixed(2)} hours</div>`;
-  }
-  // Highlight the active cell in the reference scale
-  const scaleChildren = document.getElementById('ahiScale').children;
-  for (const el of scaleChildren) el.classList.remove('active');
-  if (res.ahiClass !== 'insufficient') {
-    for (const el of scaleChildren) {
-      if (el.classList.contains(res.ahiClass)) el.classList.add('active');
+  const ve = document.getElementById('verdict');
+  ve.className = 'verdict';
+  if (res.empty) {
+    ve.classList.add('bad');
+    ve.innerHTML = '<strong>No data</strong><br>Face wasn\'t held in frame long enough for analysis.';
+  } else if (res.medIbi && res.medFft) {
+    const diff = Math.abs(res.medIbi - res.medFft);
+    if (diff < 5) {
+      ve.classList.add('trust');
+      ve.innerHTML = `<strong>Trustworthy ✓</strong><br>IBI and FFT agree within ${diff.toFixed(1)} bpm. Best ROI: <strong>${res.bestName}</strong>.`;
+    } else if (diff < 15) {
+      ve.classList.add('marginal');
+      ve.innerHTML = `<strong>Marginal</strong><br>IBI=${res.medIbi.toFixed(1)}, FFT=${res.medFft.toFixed(1)} bpm. Disagree by ${diff.toFixed(1)} bpm.`;
+    } else {
+      ve.classList.add('bad');
+      ve.innerHTML = `<strong>Untrustworthy ✗</strong><br>IBI=${res.medIbi.toFixed(1)}, FFT=${res.medFft.toFixed(1)} bpm. Try better lighting / less motion.`;
     }
+  } else {
+    ve.classList.add('bad');
+    ve.innerHTML = '<strong>Insufficient signal</strong>';
   }
 
   const grid = document.getElementById('summaryGrid');
   grid.innerHTML = '';
   const add = (label, val, sub='') => {
-    const d = document.createElement('div'); d.className = 'metric';
+    const d = document.createElement('div');
+    d.className = 'metric';
     d.innerHTML = `<div class="label">${label}</div><div class="value">${val}</div>` +
                   (sub ? `<div class="sub">${sub}</div>` : '');
     grid.appendChild(d);
   };
-  const dSec = Math.round(res.duration);
-  const hh = Math.floor(dSec/3600);
-  const mm = Math.floor((dSec%3600)/60);
-  const ss = dSec%60;
-  add('Duration', `${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}:${String(ss).padStart(2,'0')}`);
-  add('Events', res.events.length, `${res.eph.toFixed(1)}/hr`);
-  add('Apneas', res.apneas);
-  add('Hypopneas', res.hypos, 'suspected');
-  add('Inhales', res.inhales.length);
-  add('Exhales', res.exhales.length);
-  add('Longest event', `${res.longest.toFixed(1)}s`);
-  add('Re-locks', res.relock_times.length);
-  add('Segments', res.locked_baselines.length);
-
+  const dSec = Math.floor(res.duration);
+  add('Duration', `${String(Math.floor(dSec/60)).padStart(2,'0')}:${String(dSec%60).padStart(2,'0')}`);
+  add('FPS', res.fps ? res.fps.toFixed(1) : '--');
+  if (!res.empty) {
+    add('Best ROI', res.bestName, res.best.algo);
+    add('Beats', res.beatTimes.length);
+    add('HR (IBI)', res.medIbi ? res.medIbi.toFixed(1) + ' bpm' : '--');
+    add('HR (FFT)', res.medFft ? res.medFft.toFixed(1) + ' bpm' : '--');
+    const validIbis = res.rawIbisMs.filter(v => v > 300 && v < 1500);
+    if (validIbis.length) {
+      const meanIbi = validIbis.reduce((a,b)=>a+b)/validIbis.length;
+      add('Mean IBI', meanIbi.toFixed(0) + ' ms');
+    }
+  }
   if (res.empty) return;
 
-  // Force identical x-axis range + identical margins across all three
-  // graphs so their time axes line up pixel-for-pixel.
-  const xMin = 0;
-  const xMax = res.duration > 0 ? res.duration : (res.tRel[res.tRel.length - 1] || 1);
-  const sharedMargin = { t: 30, l: 60, r: 20, b: 42 };
-  const baseLayout = {
-    paper_bgcolor: '#ffffff', plot_bgcolor: '#f6f8fa',
-    font: { color: '#1f2328' },
-    margin: sharedMargin,
-    xaxis: { gridcolor: '#d0d7de', linecolor: '#d0d7de', zerolinecolor: '#d0d7de',
-             title: 'Time (s)', range: [xMin, xMax], fixedrange: false },
-    legend: { orientation: 'h', y: 1.12, font: { size: 11 } }
-  };
-  // Plotly config shared by all three graphs -- no box/lasso select, no logo.
-  const plotConfig = {
-    responsive: true,
-    displaylogo: false,
-    modeBarButtonsToRemove: ['select2d', 'lasso2d', 'toggleSpikelines']
-  };
-
-  // Graph 1
-  const traces1 = [{
-    x: res.tRel, y: res.filtered,
-    mode: 'lines', name: 'Chest',
-    line: { color: '#1a7f37', width: 1 },
-    hovertemplate: 't=%{x:.2f}s<br>y=%{y:.3f}<extra></extra>'
-  }];
-  if (res.inhales.length) {
-    const xs = res.inhales.map(t => t - res.t0);
-    const ys = res.inhales.map(t => { const i = nearestIdx(session.times, t); return res.filtered[i] || 0; });
-    traces1.push({ x: xs, y: ys, mode: 'markers', name: `Inhale (${res.inhales.length})`,
-                   marker: { color: '#0969da', size: 5 } });
-  }
-  if (res.exhales.length) {
-    const xs = res.exhales.map(t => t - res.t0);
-    const ys = res.exhales.map(t => { const i = nearestIdx(session.times, t); return res.filtered[i] || 0; });
-    traces1.push({ x: xs, y: ys, mode: 'markers', name: `Exhale (${res.exhales.length})`,
-                   marker: { color: '#bc4c00', size: 5 } });
-  }
-  const shapes1 = [];
-  for (const e of res.events) {
-    shapes1.push({
-      type: 'rect', xref: 'x', yref: 'paper',
-      x0: e.start - res.t0, x1: e.end - res.t0, y0: 0, y1: 1,
-      fillcolor: e.type === 'apnea' ? 'rgba(207,34,46,0.22)' : 'rgba(154,103,0,0.22)',
-      line: { width: 0 }
-    });
-  }
-  for (const rt of res.relock_times) {
-    shapes1.push({
-      type: 'line', xref: 'x', yref: 'paper',
-      x0: rt - res.t0, x1: rt - res.t0, y0: 0, y1: 1,
-      line: { color: '#0891b2', width: 1, dash: 'dash' }
-    });
-  }
-  Plotly.newPlot('graph1', traces1, Object.assign({}, baseLayout, {
-    yaxis: { gridcolor: '#d0d7de', title: 'Normalised amplitude',
-             zerolinecolor: '#d0d7de', linecolor: '#d0d7de' },
-    shapes: shapes1
-  }), plotConfig);
-
-  // Graph 2
-  const zeros = res.tRel.map(_ => 0);
-  const apneaTop = res.baseline.map(b => b * APNEA_AMPLITUDE_RATIO);
-  const hypoTop  = res.baseline.map(b => b * HYPOPNEA_AMPLITUDE_RATIO);
-  const traces2 = [
-    { x: res.tRel, y: zeros, line: { width: 0 }, showlegend: false, hoverinfo: 'skip', type: 'scatter' },
-    { x: res.tRel, y: apneaTop, fill: 'tonexty',
-      fillcolor: 'rgba(207,34,46,0.15)', line: { width: 0 },
-      name: 'Apnea zone (≥80% drop)', type: 'scatter', hoverinfo: 'skip' },
-    { x: res.tRel, y: hypoTop, fill: 'tonexty',
-      fillcolor: 'rgba(154,103,0,0.15)', line: { width: 0 },
-      name: 'Hypopnea zone (≥50% drop)', type: 'scatter', hoverinfo: 'skip' },
-    { x: res.tRel, y: res.baseline,
-      mode: 'lines', name: 'Baseline (fixed per segment)',
-      line: { color: '#374151', width: 1.8 },
-      hovertemplate: 't=%{x:.2f}s<br>baseline=%{y:.3f}<extra></extra>' },
-    { x: res.tRel, y: res.current,
-      mode: 'lines', name: 'Current (5s max-min)',
-      line: { color: '#0969da', width: 1 },
-      hovertemplate: 't=%{x:.2f}s<br>current=%{y:.3f}<extra></extra>' }
-  ];
-  const annotations2 = res.locked_baselines.map((lb, i) => {
-    let text = `B#${i+1}=${lb.value.toFixed(3)}`;
-    if (lb.method === 'iqr' && lb.peak_iqr && lb.trough_iqr) {
-      text += `<br>max: ${lb.typical_peak.toFixed(3)}   Q1Q3=[${lb.peak_iqr[0].toFixed(3)}, ${lb.peak_iqr[1].toFixed(3)}]`;
-      text += `<br>min: ${lb.typical_trough.toFixed(3)}   Q1Q3=[${lb.trough_iqr[0].toFixed(3)}, ${lb.trough_iqr[1].toFixed(3)}]`;
+  // Panel 1: pulse + beats
+  {
+    const canvas = document.getElementById('chart1');
+    const { ctx, W, H } = setupCanvas(canvas, 260);
+    const dur = res.sessionDur;
+    const warmupN = Math.floor(FILTER_WARMUP_SEC * res.fps);
+    const tail = res.best.filt.slice(warmupN);
+    let mean = 0;
+    for (const v of tail) mean += v;
+    mean /= tail.length;
+    let vr = 0;
+    for (const v of tail) vr += (v-mean)*(v-mean);
+    const std = Math.sqrt(vr/tail.length) + 1e-9;
+    const { pad, plotW, plotH } = drawAxes(ctx, W, H, 0, dur, -5, 5, { yLabel:'pulse (norm)' });
+    ctx.strokeStyle = '#c0392b'; ctx.lineWidth = 1;
+    ctx.beginPath();
+    let started = false;
+    for (let i = warmupN; i < res.best.filt.length; i++) {
+      const tRel = res.best.times[i] - res.t0;
+      const v = (res.best.filt[i]-mean)/std;
+      const x = sx(tRel, 0, dur, pad, plotW);
+      const y = sy(v, -5, 5, pad, plotH);
+      if (!started) { ctx.moveTo(x,y); started = true; } else ctx.lineTo(x,y);
     }
-    return {
-      x: lb.time - res.t0, y: lb.value, text,
-      showarrow: true, arrowhead: 2, arrowcolor: '#656d76', ax: 30, ay: -34,
-      bgcolor: 'rgba(255,255,255,0.95)', bordercolor: '#d0d7de',
-      font: { color: '#1f2328', size: 10 }
-    };
-  });
-  const shapes2 = res.relock_times.map(rt => ({
-    type: 'line', xref: 'x', yref: 'paper',
-    x0: rt - res.t0, x1: rt - res.t0, y0: 0, y1: 1,
-    line: { color: '#0891b2', width: 1, dash: 'dash' }
-  }));
-  Plotly.newPlot('graph2', traces2, Object.assign({}, baseLayout, {
-    yaxis: { gridcolor: '#d0d7de', title: 'Amplitude',
-             zerolinecolor: '#d0d7de', linecolor: '#d0d7de' },
-    shapes: shapes2, annotations: annotations2
-  }), plotConfig);
-
-  // Graph 3 -- event timeline. Uses the SAME xaxis range and left margin as
-  // graphs 1 & 2 so the time axis lines up exactly. The y-axis is hidden but
-  // we keep the same margins to avoid plot-area width drift.
-  const traces3 = [];
-  const apneas = res.events.filter(e => e.type === 'apnea');
-  const hypos  = res.events.filter(e => e.type === 'hypopnea');
-  const buildSpans = (list) => {
-    const xs = [], ys = [];
-    for (const e of list) { xs.push(e.start - res.t0, e.end - res.t0, null); ys.push(1, 1, null); }
-    return { xs, ys };
-  };
-  if (apneas.length) {
-    const { xs, ys } = buildSpans(apneas);
-    traces3.push({ x: xs, y: ys, mode: 'lines',
-      line: { color: '#cf222e', width: 22 }, name: `Apnea (${apneas.length})`,
-      hovertemplate: 't=%{x:.1f}s<extra>Apnea</extra>' });
-  }
-  if (hypos.length) {
-    const { xs, ys } = buildSpans(hypos);
-    traces3.push({ x: xs, y: ys, mode: 'lines',
-      line: { color: '#9a6700', width: 22 }, name: `Hypopnea (${hypos.length})`,
-      hovertemplate: 't=%{x:.1f}s<extra>Hypopnea</extra>' });
-  }
-  Plotly.newPlot('graph3', traces3, Object.assign({}, baseLayout, {
-    yaxis: { visible: false, range: [0.5, 1.5], showgrid: false, zeroline: false },
-    height: 150
-  }), plotConfig);
-
-  // Per-segment breakdown
-  const segDiv = document.getElementById('segmentDetails');
-  segDiv.innerHTML = '';
-  if (res.locked_baselines.length === 0) {
-    segDiv.innerHTML = '<div class="segment-row">No baselines locked (session ended during warmup).</div>';
-  }
-  for (let i = 0; i < res.locked_baselines.length; i++) {
-    const lb = res.locked_baselines[i];
-    const d = document.createElement('div');
-    d.className = 'segment-row';
-    let html = `<strong>Segment #${i+1}</strong> &nbsp; baseline = <strong>${lb.value.toFixed(4)}</strong> ` +
-               `&nbsp; method: ${lb.method} &nbsp; locked at t=${(lb.time-res.t0).toFixed(1)}s`;
-    if (lb.method === 'iqr' && lb.peak_iqr && lb.trough_iqr) {
-      html += `<br>peaks:   mean=<strong>${lb.typical_peak.toFixed(3)}</strong>` +
-              ` &nbsp; Q1–Q3=[${lb.peak_iqr[0].toFixed(3)}, ${lb.peak_iqr[1].toFixed(3)}]` +
-              ` &nbsp; Tukey fence=[${lb.peak_fence[0].toFixed(3)}, ${lb.peak_fence[1].toFixed(3)}]` +
-              ` &nbsp; kept ${lb.peak_in_iqr}/${lb.peak_count}`;
-      html += `<br>troughs: mean=<strong>${lb.typical_trough.toFixed(3)}</strong>` +
-              ` &nbsp; Q1–Q3=[${lb.trough_iqr[0].toFixed(3)}, ${lb.trough_iqr[1].toFixed(3)}]` +
-              ` &nbsp; Tukey fence=[${lb.trough_fence[0].toFixed(3)}, ${lb.trough_fence[1].toFixed(3)}]` +
-              ` &nbsp; kept ${lb.trough_in_iqr}/${lb.trough_count}`;
-    } else if (lb.method === 'fallback_maxmin') {
-      html += `<br>(fallback max-min — only peaks=${lb.peak_count} troughs=${lb.trough_count} detected)`;
+    ctx.stroke();
+    ctx.fillStyle = '#4ade80';
+    for (const t of res.beatTimes) {
+      const tRel = t - res.t0;
+      let lo = 0, hi = res.best.times.length-1;
+      while (lo < hi) { const mm = (lo+hi)>>1; if (res.best.times[mm] < t) lo = mm+1; else hi = mm; }
+      const v = (res.best.filt[lo]-mean)/std;
+      const x = sx(tRel, 0, dur, pad, plotW);
+      const y = sy(v, -5, 5, pad, plotH);
+      ctx.beginPath(); ctx.arc(x, y, 2.5, 0, 2*Math.PI); ctx.fill();
     }
-    if (lb.chest_width_px) html += `<br>chest width at lock: ${lb.chest_width_px}px`;
-    d.innerHTML = html;
-    segDiv.appendChild(d);
+    document.getElementById('caption1').textContent =
+      `Best-ROI (${res.bestName}, ${res.best.algo}) pulse with ${res.beatTimes.length} detected beats`;
   }
 }
 
-// ============ DOWNLOAD JSON ============
-downloadBtn.addEventListener('click', () => {
-  if (!session || session.times.length === 0) return;
-  const t0 = session.times[0];
-  const stamp = new Date().toISOString().replace(/[:.]/g,'-').slice(0,19);
-  const events = session.events || [];
-  const duration = session.times.length > 1 ? session.times[session.times.length-1] - t0 : 0;
-  const eph = events.length / Math.max(duration/3600, 1/3600);
+// ================== SESSION CONTROL ==================
+async function startSession() {
+  startBtn.disabled = true;
+  stopBtn.disabled = false;
+  resetTimer();
+  for (const name of ROI_NAMES) {
+    rois[name] = new RoiSignal(name);
+    smoothBoxes[name] = null;
+  }
+  selector.clear();
+  beats.clear();
+  fpsSamples = []; lastFrameT = null;
+  liveHr = 0; liveConf = 0; liveMethod = '-';
+  lastSessionResults = null;
+  winnerHistory = [];
+  sessionStart = performance.now()/1000;
+
+  bannerEl.className = 'banner warming';
+  bannerEl.textContent = 'INITIALIZING...';
+  reasonEl.textContent = 'Loading face landmark model';
+
+  try {
+    await initFaceLandmarker();
+    mpReady = true;
+  } catch(e) {
+    log('Face landmarker init failed: ' + e.message, 'err');
+    startBtn.disabled = false; stopBtn.disabled = true;
+    return;
+  }
+  if (!await startCamera()) { startBtn.disabled = false; stopBtn.disabled = true; return; }
+  running = true;
+  startTimer();
+  requestAnimationFrame(processFrame);
+  log('Session started.', 'ok');
+}
+
+function stopSession() {
+  running = false;
+  stopTimer();
+  stopCamera();
+  startBtn.disabled = false;
+  stopBtn.disabled = true;
+  log('Computing results...');
+  setTimeout(() => {
+    const res = runOfflineAnalysis();
+    lastSessionResults = res;
+    liveView.style.display = 'none';
+    resultsView.classList.add('show');
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        try { renderResults(res); log('Results ready', 'ok'); }
+        catch(err) { log('Render error: ' + err.message, 'err'); console.error(err); }
+      });
+    });
+  }, 200);
+}
+
+backBtn.addEventListener('click', () => {
+  resultsView.classList.remove('show');
+  liveView.style.display = '';
+  resetTimer();
+  bannerEl.className = 'banner idle';
+  bannerEl.textContent = 'Idle';
+  reasonEl.textContent = 'Press Start to begin.';
+});
+
+downloadJsonBtn.addEventListener('click', () => {
+  if (!lastSessionResults || lastSessionResults.empty) return;
+  const r = lastSessionResults;
   const payload = {
     summary: {
-      session_stamp: stamp,
-      duration_seconds: Math.round(duration*10)/10,
-      total_events: events.length,
-      apneas:    events.filter(e => e.type==='apnea').length,
-      hypopneas: events.filter(e => e.type==='hypopnea').length,
-      events_per_hour: Math.round(eph*100)/100,
-      longest_event_seconds: Math.round(events.reduce((m,e)=>Math.max(m,e.duration),0)*10)/10,
-      inhales: session.inhales.length,
-      exhales: session.exhales.length,
-      roi_relock_count: session.relock_times.length,
-      disclaimer: "Screening estimate only. Not a medical diagnosis."
+      duration_seconds: Math.round(r.duration*10)/10,
+      measured_fps: Math.round(r.fps*100)/100,
+      best_roi_overall: r.bestName,
+      total_beats_detected: r.beatTimes.length,
+      median_hr_ibi_bpm: r.medIbi ? Math.round(r.medIbi*10)/10 : null,
+      median_hr_fft_bpm: r.medFft ? Math.round(r.medFft*10)/10 : null,
+      hrv: r.hrv,
+      roi_quality: Object.fromEntries(
+        Object.entries(r.perRoi).map(([n,d]) => [n, {snr: Math.round(d.snr*1000)/1000, algo: d.algo,
+                                                      snr_green: Math.round(d.snrGreen*1000)/1000,
+                                                      snr_pos:   Math.round(d.snrPos*1000)/1000}])
+      ),
     },
-    events: events.map(e => ({
-      start_seconds: Math.round((e.start-t0)*100)/100,
-      end_seconds:   Math.round((e.end-t0)*100)/100,
-      duration_seconds: Math.round(e.duration*100)/100,
-      type: e.type,
-      min_amplitude_ratio: e.min_amplitude_ratio,
-      note: e.note
-    })),
-    inhales_seconds: session.inhales.map(t => Math.round((t-t0)*100)/100),
-    exhales_seconds: session.exhales.map(t => Math.round((t-t0)*100)/100),
-    relock_timestamps_seconds: session.relock_times.map(t => Math.round((t-t0)*100)/100),
-    locked_baselines: session.locked_baselines.map((lb,i) => ({
-      segment: i+1,
-      locked_at_seconds: Math.round((lb.time-t0)*100)/100,
-      value: Math.round(lb.value*10000)/10000,
-      source: lb.source, method: lb.method,
-      typical_peak: lb.typical_peak !== undefined ? Math.round(lb.typical_peak*10000)/10000 : null,
-      typical_trough: lb.typical_trough !== undefined ? Math.round(lb.typical_trough*10000)/10000 : null,
-      peak_iqr:   lb.peak_iqr,   trough_iqr:   lb.trough_iqr,
-      peak_fence: lb.peak_fence, trough_fence: lb.trough_fence,
-      peak_count: lb.peak_count, trough_count: lb.trough_count,
-      peak_in_iqr: lb.peak_in_iqr, trough_in_iqr: lb.trough_in_iqr,
-      chest_width_px: lb.chest_width_px
-    }))
+    hr_timeline_ibi: r.hrIbi.map(p => [Math.round(p[0]*100)/100, Math.round(p[1]*10)/10]),
+    hr_timeline_fft: r.hrFft.map(p => [Math.round(p[0]*100)/100, Math.round(p[1]*10)/10]),
+    beat_times_seconds: r.beatTimes.map(t => Math.round((t-r.t0)*1000)/1000),
+    ibis_ms: r.rawIbisMs.map(v => Math.round(v*10)/10),
+    winner_history: r.winnerHistory.map(([t,n]) => [Math.round((t - r.t0)*100)/100, n]),
   };
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  a.href = url; a.download = `apnea_${stamp}.json`;
+  a.href = url;
+  a.download = `vision_rppg_${new Date().toISOString().replace(/[:.]/g,'-').slice(0,19)}.json`;
   document.body.appendChild(a); a.click();
   setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 100);
 });
 
-// ============ BUTTONS ============
 startBtn.addEventListener('click', startSession);
 stopBtn.addEventListener('click', stopSession);
-backBtn.addEventListener('click', () => {
-  resultsView.classList.remove('show');
-  liveView.style.display = '';
-  startBtn.disabled = false;
-  stopBtn.disabled = true;
-  setBanner('idle', 'Idle', 'Press Start to begin.');
-  timerEl.textContent = '00:00';
-});
 
-if (!window.isSecureContext && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
-  log('WARNING: camera requires HTTPS or localhost', 'warn');
-}
+window.addEventListener('mp-ready', () => log('MediaPipe module loaded', 'ok'));
+if (!window.isSecureContext) log('WARNING: camera requires HTTPS or localhost', 'warn');
 if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
   log('ERROR: browser does not support camera access', 'err');
   startBtn.disabled = true;
