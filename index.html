@@ -68,6 +68,13 @@
     background: rgba(0,0,0,0.7); padding: 4px 10px;
     border-radius: 6px; font-size: 11px; color: #ccc;
   }
+  .freq-badge {
+    position: absolute; top: 70px; right: 8px; z-index: 2;
+    background: rgba(0,0,0,0.75); padding: 6px 12px;
+    border-radius: 8px; font-size: 14px; font-weight: 700;
+    color: var(--accent2); font-variant-numeric: tabular-nums; letter-spacing: 0.5px;
+  }
+  .freq-badge .lbl { font-size: 9px; color: var(--muted); display: block; text-transform: uppercase; letter-spacing: 0.5px; }
   .controls { display: flex; gap: 8px; }
   button {
     flex: 1; padding: 14px;
@@ -139,6 +146,7 @@
       <div class="banner idle" id="banner">Idle</div>
       <div class="reason" id="reason">Press Start to begin.</div>
       <div class="fps-badge" id="fpsBadge">FPS --</div>
+      <div class="freq-badge" id="freqBadge"><span class="lbl">Freq</span>-- Hz</div>
       <div class="timer-badge" id="timer">00:00</div>
     </div>
 
@@ -263,6 +271,7 @@ const bannerEl  = document.getElementById('banner');
 const reasonEl  = document.getElementById('reason');
 const timerEl   = document.getElementById('timer');
 const fpsBadge  = document.getElementById('fpsBadge');
+const freqBadge = document.getElementById('freqBadge');
 const startBtn  = document.getElementById('startBtn');
 const stopBtn   = document.getElementById('stopBtn');
 const backBtn   = document.getElementById('backBtn');
@@ -596,7 +605,7 @@ const rois = Object.fromEntries(ROI_NAMES.map(n => [n, new RoiSignal(n)]));
 const smoothBoxes = Object.fromEntries(ROI_NAMES.map(n => [n, null]));
 const selector = new BestRoiSelector();
 const beats = new BeatStore();
-let liveHr = 0, liveConf = 0, liveMethod = '-';
+let liveHr = 0, liveConf = 0, liveMethod = '-', liveFreq = 0;
 let lastSessionResults = null;
 let winnerHistory = []; // [t, name]
 let estimatorState = 'no_face';
@@ -802,31 +811,18 @@ function processFrame() {
       winnerHistory.push([now, winner.name]);
       const w = rois[winner.name];
 
-      // HR primary: IBI from beats in window
-      const winStart = now - HR_WIN_SEC;
-      const recent = beats.times.filter(t => t >= winStart && t <= now);
-      let hrIbi = 0, nBeats = 0;
-      if (recent.length >= 2) {
-        const ibs = [];
-        for (let i = 1; i < recent.length; i++) {
-          const d = recent[i] - recent[i-1];
-          if (d > 0.3 && d < 1.5) ibs.push(d);
-        }
-        if (ibs.length) {
-          const mIbi = ibs.reduce((a,b)=>a+b)/ibs.length;
-          hrIbi = 60 / mIbi; nBeats = ibs.length + 1;
-        }
-      }
-      if (nBeats >= 3) {
-        liveHr = hrIbi; liveConf = Math.min(1, nBeats/10); liveMethod = 'IBI';
-      } else if (w.lastFiltered) {
+      // HR from spectral peak frequency (FFT). HR_bpm = freq_Hz * 60.
+      if (w.lastFiltered) {
         const winN = Math.floor(HR_WIN_SEC * measuredFps);
         const winSig = w.lastFiltered.length > winN
           ? w.lastFiltered.slice(w.lastFiltered.length - winN)
           : w.lastFiltered;
         const { hr, confidence } = estimateHrFft(winSig, measuredFps);
         if (confidence > 0.1 && hr >= HR_LOW_HZ*60 && hr <= HR_HIGH_HZ*60) {
-          liveHr = hr; liveConf = confidence; liveMethod = 'FFT';
+          liveHr = hr;
+          liveFreq = hr / 60;
+          liveConf = confidence;
+          liveMethod = 'FFT';
         }
       }
 
@@ -906,7 +902,7 @@ function drawOverlay(boxes, vw, vh) {
 function updateDisplay() {
   if (liveHr > 0) {
     hrLiveEl.textContent = liveHr.toFixed(0);
-    hrLiveSub.textContent = `bpm — ${liveMethod} (conf ${liveConf.toFixed(2)})`;
+    hrLiveSub.textContent = `bpm — ${liveFreq.toFixed(2)} Hz (conf ${liveConf.toFixed(2)})`;
     hrLiveEl.style.color = liveConf > 0.25 ? 'var(--good)' :
                             liveConf > 0.15 ? 'var(--mid)' : 'var(--bad)';
   } else {
@@ -914,6 +910,9 @@ function updateDisplay() {
     hrLiveSub.textContent = 'bpm';
     hrLiveEl.style.color = '';
   }
+  freqBadge.innerHTML = liveFreq > 0
+    ? `<span class="lbl">Freq</span>${liveFreq.toFixed(2)} Hz`
+    : `<span class="lbl">Freq</span>-- Hz`;
 
   beatsCountEl.textContent = beats.times.length || '--';
 
@@ -1281,7 +1280,7 @@ async function startSession() {
   selector.clear();
   beats.clear();
   fpsSamples = []; lastFrameT = null;
-  liveHr = 0; liveConf = 0; liveMethod = '-';
+  liveHr = 0; liveConf = 0; liveMethod = '-'; liveFreq = 0;
   lastSessionResults = null;
   winnerHistory = [];
   sessionStart = performance.now()/1000;
